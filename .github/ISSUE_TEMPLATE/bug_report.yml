@@ -1,0 +1,44 @@
+name: Bug Report
+description: Report an issue in TracerNest-Logger
+title: "[BUG]: "
+labels: ["bug"]
+
+body:
+  - type: textarea
+    attributes:
+      label: Bug Description
+      description: Explain the issue.
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: Package Version
+      placeholder: 1.5.1
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: Node.js Version
+      placeholder: v22.x
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Steps to Reproduce
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Expected Behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Actual Behaviour
+    validations:
+      required: true

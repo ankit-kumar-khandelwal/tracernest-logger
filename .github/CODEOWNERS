@@ -1,0 +1,14 @@
+# Default repository owner
+* @ankit-kumar-khandelwal
+
+# Security policies
+/SECURITY.md @ankit-kumar-khandelwal
+
+# GitHub workflows
+/.github/workflows/ @ankit-kumar-khandelwal
+
+# Package configuration
+/package.json @ankit-kumar-khandelwal
+
+# Core source code
+/src/ @ankit-kumar-khandelwal
