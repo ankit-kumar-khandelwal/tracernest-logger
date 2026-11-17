@@ -8,8 +8,8 @@
 
 ---
 
-[![npm version](https://img.shields.io/npm/v/tracernest-logger.svg?style=flat-square&color=38BDF8)](https://www.npmjs.com/package/tracernest-logger)
-[![npm downloads](https://img.shields.io/npm/dm/tracernest-logger.svg?style=flat-square&color=6366F1)](https://www.npmjs.com/package/tracernest-logger)
+[![npm version](https://img.shields.io/npm/v/tracernest-logger)](https://www.npmjs.com/package/tracernest-logger)
+[![npm downloads](https://img.shields.io/npm/dm/tracernest-logger)](https://www.npmjs.com/package/tracernest-logger)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-10B981.svg?style=flat-square)](LICENSE)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-10B981.svg?style=flat-square)](package.json)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-38BDF8.svg?style=flat-square)](package.json)
