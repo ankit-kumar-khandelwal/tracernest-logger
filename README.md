@@ -700,6 +700,16 @@ Current Release: **`1.6.0`**
 
 ---
 
+## Community & Contributing
+
+We welcome contributions of all forms from the community!
+- **[Contributing Guide](CONTRIBUTING.md):** Development setup, zero-dependency policy, and PR submission guidelines.
+- **[Code of Conduct](CODE_OF_CONDUCT.md):** Standards and expectations for an inclusive, welcoming community.
+- **[Security Policy](SECURITY.md):** Responsible vulnerability reporting and security architecture details.
+- **[Changelog](CHANGELOG.md):** Release history and migration notes.
+
+---
+
 ## License
 
 This project is licensed under the [Apache License, Version 2.0](LICENSE) &mdash; free for use in commercial applications, open-source projects, and enterprise infrastructure.
