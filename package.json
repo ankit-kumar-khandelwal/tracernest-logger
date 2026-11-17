@@ -1,0 +1,83 @@
+{
+  "name": "tracernest-logger",
+  "version": "1.5.1",
+  "description": "Zero-dependency, high-security Node.js application telemetry logger, live trace monitor & ops dashboard with encrypted SQL storage, RBAC, HTTP interception, real client IP extraction, and graceful shutdown",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "tracernest-reset-admin": "dist/bin/reset-admin.js",
+    "tracenest-reset-admin": "dist/bin/reset-admin.js"
+  },
+  "files": [
+    "dist",
+    "assets",
+    "LICENSE",
+    "README.md",
+    "!dist/tests/**",
+    "!dist/tests",
+    "!dist/demo.*",
+    "!dist/**/*.map"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tracernest/tracernest-logger.git"
+  },
+  "homepage": "https://github.com/tracernest/tracernest-logger#readme",
+  "bugs": {
+    "url": "https://github.com/tracernest/tracernest-logger/issues"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build && npm test",
+    "watch": "tsc -w",
+    "demo": "tsc && node dist/demo.js",
+    "test": "node --test dist/**/*.test.js",
+    "reset--admin--user": "node dist/bin/reset-admin.js"
+  },
+  "keywords": [
+    "tracernest-logger",
+    "tracernest",
+    "telemetry",
+    "tracing",
+    "logging",
+    "logger",
+    "terminal-logs",
+    "rbac",
+    "dashboard",
+    "security",
+    "sse",
+    "monitoring",
+    "zero-dependency",
+    "audit-log",
+    "errsole",
+    "winston",
+    "morgan",
+    "pino",
+    "rate-limit",
+    "real-ip",
+    "sqlite",
+    "mysql",
+    "graceful-shutdown",
+    "developer-tools"
+  ],
+  "author": "TracerNest-Logger Contributors <contact@tracernest.dev>",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.1",
+    "express": "^4.21.2",
+    "typescript": "^5.7.2"
+  },
+  "peerDependencies": {
+    "express": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    }
+  },
+  "dependencies": {}
+}

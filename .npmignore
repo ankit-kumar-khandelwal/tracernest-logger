@@ -1,0 +1,13 @@
+dist/tests
+dist/tests/**
+dist/demo.*
+src/
+*.sqlite
+*.sql
+*.log
+*.key
+.master.key
+.tracernest/
+tracernest-data/
+.git*
+
