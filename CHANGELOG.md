@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.1] - 2026-11-18
+
+### Documentation & Architecture
+- **Observability Product Repositioning:** Transformed product documentation to position TracerNest as a *Self-Hosted Node.js Observability & Operations Dashboard*, centered around investigating unrepeatable production bugs and zero-port overhead.
+- **Modular Documentation Library:** Added comprehensive `docs/` suite covering architecture, getting started, configuration, API observability, health diagnostics, security, deployment, troubleshooting, and production debugging playbooks.
+- **Dashboard Screenshots & Assets:** Organized visual preview assets into `assets/screenshots/`.
+
 ## [1.7.0] - 2026-11-18
 
 ### Changed

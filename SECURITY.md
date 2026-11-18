@@ -10,9 +10,9 @@ Only the latest active minor release receives patches for critical, high, and me
 
 | Version | Supported          |
 | :------ | :----------------- |
+| `1.7.x` | :white_check_mark: |
 | `1.6.x` | :white_check_mark: |
-| `1.5.x` | :white_check_mark: |
-| `< 1.5` | :x:                |
+| `< 1.6` | :x:                |
 
 We strongly encourage all operators to upgrade to the latest patch release immediately when a security update is published.
 
@@ -25,7 +25,7 @@ We strongly encourage all operators to upgrade to the latest patch release immed
 If you discover a potential security vulnerability in TracerNest Logger, report it through one of the following private channels:
 
 1. **GitHub Private Security Advisory (Preferred):**  
-   Navigate to the repository's [Security Advisories](https://github.com/tracernest/tracernest-logger/security/advisories) tab and click **"Report a vulnerability"**. This creates an isolated, encrypted discussion channel with the maintainers.
+   Navigate to the repository's [Security Advisories](https://github.com/ankit-kumar-khandelwal/tracernest-logger/security/advisories) tab and click **"Report a vulnerability"**. This creates an isolated, encrypted discussion channel with the maintainers.
 
 2. **Direct Security Email:**  
    Send an encrypted or plain email to: **`security@tracernest.dev`**  
