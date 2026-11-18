@@ -3,6 +3,9 @@
 # TracerNest
 
 ### Stop guessing what's happening inside your backend. See it with TracerNest.
+# TracerNest
+
+### Stop guessing what's happening inside your backend. See it with TracerNest.
 
 **Self-hosted observability and operations dashboard for Node.js applications.**
 
@@ -130,18 +133,6 @@ TracerNest features a refined, dark-mode operations console engineered for clari
 |  10:13:58.120  HTTP  GET  /api/products?cat=tools  200  (12ms)   203.0.113.195                     |
 +----------------------------------------------------------------------------------------------------+
 ```
-
-### Visual Preview & Assets
-
-The dashboard user interface is accessible directly from your repository assets:
-
-<div align="center">
-
-![TracerNest Banner](assets/tracernest-logger-banner.svg)
-
-*TracerNest embedded operations dashboard preview located at [assets/screenshots/dashboard-preview.jpge](assets/screenshots/dashboard-preview.jpeg).*
-
-</div>
 
 ---
 
