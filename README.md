@@ -3,9 +3,6 @@
 # TracerNest
 
 ### Stop guessing what's happening inside your backend. See it with TracerNest.
-# TracerNest
-
-### Stop guessing what's happening inside your backend. See it with TracerNest.
 
 **Self-hosted observability and operations dashboard for Node.js applications.**
 
