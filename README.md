@@ -406,14 +406,24 @@ Complete architectural guides and deep dives are available in the [`docs/`](docs
 
 ---
 
-## Contributing & Community
+## Versioning Policy
 
-TracerNest is open-source software built for backend engineering teams. We welcome contributions, bug reports, and feedback!
+TracerNest Logger follows [Semantic Versioning (SemVer)](https://semver.org/):
+- **Major (X.0.0):** Breaking API changes or schema modifications requiring explicit migration steps.
+- **Minor (1.X.0):** New features, performance enhancements, and backward-compatible additions.
+- **Patch (1.0.X):** Bug fixes, security hardening, and documentation updates.
 
-- [**Contributing Guide**](CONTRIBUTING.md) &mdash; Development setup, zero-dependency policy, and PR submission rules.
-- [**Code of Conduct**](CODE_OF_CONDUCT.md) &mdash; Contributor Covenant v2.1 standards.
-- [**Security Policy**](SECURITY.md) &mdash; Vulnerability reporting and security architecture.
-- [**Changelog**](CHANGELOG.md) &mdash; Version release history and migration notes.
+Current Release: **`1.6.0`**
+
+---
+
+## Community & Contributing
+
+We welcome contributions of all forms from the community!
+- **[Contributing Guide](CONTRIBUTING.md):** Development setup, zero-dependency policy, and PR submission guidelines.
+- **[Code of Conduct](CODE_OF_CONDUCT.md):** Standards and expectations for an inclusive, welcoming community.
+- **[Security Policy](SECURITY.md):** Responsible vulnerability reporting and security architecture details.
+- **[Changelog](CHANGELOG.md):** Release history and migration notes.
 
 ---
 
