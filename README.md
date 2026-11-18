@@ -3,9 +3,6 @@
 # TracerNest
 
 ### Stop guessing what's happening inside your backend. See it with TracerNest.
-# TracerNest
-
-### Stop guessing what's happening inside your backend. See it with TracerNest.
 
 **Self-hosted observability and operations dashboard for Node.js applications.**
 
@@ -27,10 +24,42 @@
 
 ---
 
+## ⚡ Quick Start (30 Seconds)
+
+Get full backend observability running in 3 lines of code &mdash; **zero runtime dependencies**, **no separate monitoring port required**:
+
+```bash
+npm install tracernest-logger
+```
+
+```typescript
+import express from 'express';
+import { TracerNestLogger } from 'tracernest-logger';
+
+const app = express();
+const tracer = new TracerNestLogger({ path: '/tracernest' });
+
+// Mounts dashboard and telemetry interception on your existing HTTP app
+app.use(tracer.middleware());
+
+// Your normal application routes
+app.get('/api/users', (req, res) => res.json({ status: 'ok' }));
+
+app.listen(3000, () => {
+  console.log('Backend running on http://localhost:3000');
+  console.log('Dashboard live at http://localhost:3000/tracernest');
+});
+```
+
+*Open `http://localhost:3000/tracernest` in your browser to access your live self-hosted operations console.*
+
+---
+
 ## Table of Contents
 
 - [The Problem We Solve](#the-problem-we-solve)
 - [Why TracerNest?](#why-tracernest)
+- [Architecture & Topology](#architecture--topology)
 - [Dashboard & Telemetry Console](#dashboard--telemetry-console)
 - [Core Features](#core-features)
   - [1. Application Logging](#1-application-logging)
@@ -40,16 +69,16 @@
   - [5. Alerts & Integrations](#5-alerts--integrations)
 - [The Complete Request Lifecycle](#the-complete-request-lifecycle)
 - [Debug Production Issues Without Guesswork](#debug-production-issues-without-guesswork)
-- [Quick Start](#quick-start)
-  - [1. Installation](#1-installation)
-  - [2. Express Setup](#2-express-setup)
-  - [3. Fastify Setup](#3-fastify-setup)
-  - [4. Native Node.js HTTP Server Setup](#4-native-nodejs-http-server-setup)
-  - [5. Standalone Port Setup (Optional)](#5-standalone-port-setup-optional)
+- [Integration Guides](#integration-guides)
+  - [1. Express.js](#1-expressjs)
+  - [2. Fastify](#2-fastify)
+  - [3. Native Node.js HTTP Server](#3-native-nodejs-http-server)
+  - [4. Dedicated Standalone Port (Optional)](#4-dedicated-standalone-port-optional)
 - [Configuration Reference](#configuration-reference)
 - [Security & Privacy](#security--privacy)
   - [Production Security Checklist](#production-security-checklist)
 - [Documentation Architecture](#documentation-architecture)
+- [Versioning Policy](#versioning-policy)
 - [Contributing & Community](#contributing--community)
 - [License](#license)
 
@@ -64,15 +93,13 @@ Every backend engineer has experienced the most frustrating kind of production i
 3. **It ran in production for thousands of requests without incident.**
 4. **An unpredicted edge-case request arrives and the API fails with an unexpected error.**
 
-When developers open their terminal or log aggregator to investigate, they encounter the **missing context trap**:
-
 ```text
 [2026-11-18 10:14:02] ERROR: Cannot read properties of undefined (reading 'taxRate')
     at calculateTaxes (/app/dist/services/tax.js:42:18)
     at checkout (/app/dist/controllers/checkout.js:89:12)
 ```
 
-The error stack trace tells you *where* the code broke, but fails to answer the critical questions required to reproduce and fix it:
+The error stack trace indicates *where* the code broke, but fails to answer the critical questions required to reproduce and fix it:
 - What exact HTTP method and URL endpoint was called?
 - What query parameters were passed?
 - What was the client's payload (request body)?
@@ -81,7 +108,18 @@ The error stack trace tells you *where* the code broke, but fails to answer the 
 - How long did the request run before failing?
 - What application logs (`stdout`, `stderr`, debug traces) were emitted during that specific execution window?
 
-Without this execution context, reproducing the bug locally is pure speculation. Developers spend hours writing defensive code blindly or adding temporary log lines and waiting for the failure to strike again.
+```mermaid
+flowchart TD
+    Err["Production 500 Error"] --> Legacy["Standard Logging"]
+    Legacy --> Miss["Missing Payload, Headers & Client IP"]
+    Miss --> Guess["Guesswork & Speculation ❌"]
+    
+    Err --> TN["TracerNest Flight Recorder"]
+    TN --> Ctx["Exact Request Body + Headers + Status + Duration"]
+    Ctx --> Fix["Instant Local Reproduction & Verified Fix ✅"]
+```
+
+Without execution context, reproducing the bug locally is pure speculation. Developers spend hours writing defensive code blindly or adding temporary log lines and waiting for the failure to strike again.
 
 **TracerNest eliminates this guesswork.** It acts as an embedded telemetry flight recorder for your Node.js backend, capturing incoming request parameters, outgoing response payloads, application logs, and system health in one self-hosted dashboard.
 
@@ -113,15 +151,30 @@ Many observability libraries drag dozens of external dependencies into your runt
 | **Payload Observability** | Sampled / complex setup | Supported | **Automatic with circular & sensitive data masking** |
 | **Cost Predictability** | Volume-based SaaS billing | Free / Self-hosted | **Open-source (Apache 2.0)** |
 
-*Note: TracerNest is designed for in-process application observability, log inspection, and rapid production debugging. It complements rather than replaces fleet-wide distributed tracing platforms (such as OpenTelemetry).*
+---
+
+## Architecture & Topology
+
+TracerNest resides in-process alongside your application code, handling both application traffic and operations inspection through a unified pipeline:
+
+```mermaid
+flowchart LR
+    Client["Incoming Request"] --> App["Node.js Application (Port 3000)"]
+    App --> Route{"Path Check"}
+    Route -->|"/tracernest"| Dash["Embedded Dashboard UI"]
+    Route -->|"/api/*"| Handler["Application Route Handlers"]
+    Handler --> Telemetry["TracerNest Middleware Interceptor"]
+    Telemetry --> Storage[("Encrypted SQL & Memory RingBuffer")]
+    Storage -.->|SSE Real-Time Feed| Dash
+```
 
 ---
 
 ## Dashboard & Telemetry Console
 
-TracerNest features a refined, dark-mode operations console engineered for clarity under incident pressure.
+TracerNest features a dark-mode operations console engineered for clarity under incident pressure:
 
-```
+```text
 +----------------------------------------------------------------------------------------------------+
 |  TRACERNEST  |  Live Logs  |  API Requests  |  Health: OK  |  Settings         [Admin (Operator)]  |
 +----------------------------------------------------------------------------------------------------+
@@ -137,8 +190,6 @@ TracerNest features a refined, dark-mode operations console engineered for clari
 ---
 
 ## Core Features
-
-Verified capabilities implemented in the codebase:
 
 ### 1. Application Logging
 - **Console Output Interception:** Transparently intercepts `stdout` and `stderr` without disrupting standard terminal output or container logging pipelines.
@@ -176,6 +227,16 @@ Verified capabilities implemented in the codebase:
 - **Automated Cooldown Throttling:** Built-in 30-second cooldown per channel prevents notification flooding during cascade failures.
 - **Interactive UI Testing:** Operators can trigger live test alerts directly from dashboard settings.
 
+```mermaid
+flowchart LR
+    Event["Telemetry Event"] --> Buffer["Memory RingBuffer"]
+    Buffer --> SSE["Live SSE Stream"]
+    Buffer --> DB[("Encrypted SQL Store")]
+    Buffer --> AlertCheck{"Is Error/Warn?"}
+    AlertCheck -->|"30s Cooldown"| Email["SMTP Email"]
+    AlertCheck -->|"30s Cooldown"| Teams["MS Teams Webhook"]
+```
+
 ---
 
 ## The Complete Request Lifecycle
@@ -184,22 +245,15 @@ TracerNest instruments the request-response lifecycle from entry to exit:
 
 ```mermaid
 flowchart TD
-    A[Incoming HTTP Request] --> B[TracerNest Middleware]
-    B --> C[Extract Client IP & Sanitize Headers / Query]
-    C --> D[Capture Request Body Stream]
-    D --> E[Application Route / Controller]
-    E --> F[Application Execution]
-    F -->|stdout / stderr| G[Console Interceptor]
-    F --> H[Response Generated res.json / res.send]
-    H --> I[Capture Response Body & Calculate Duration]
-    C --> J[Assemble Structured Telemetry Entry]
-    I --> J
-    G --> J
-    J --> K[Apply TTL Retention Rules]
-    K --> L[In-Memory RingBuffer]
-    L --> M[SSE Broadcast to Dashboard]
-    L --> N[AES-256-GCM Encrypted SQL Store]
-    M --> O[Developer Investigation]
+    A["1. Incoming HTTP Request"] --> B["2. TracerNest Middleware"]
+    B --> C["3. Extract Client IP & Sanitize Query/Headers"]
+    C --> D["4. Buffer Request Body Stream"]
+    D --> E["5. Application Route Execution"]
+    E --> F["6. Generate Response (res.json / res.send)"]
+    F --> G["7. Capture Response Body & Calculate Latency"]
+    G --> H["8. Assemble Structured Telemetry Record"]
+    H --> I["9. Memory RingBuffer & Encrypted SQL"]
+    I --> J["10. Live SSE Broadcast & Alert Dispatch"]
 ```
 
 ### Realistic Execution Boundaries
@@ -232,15 +286,9 @@ When a production-only bug occurs, TracerNest enables rapid triage:
 
 ---
 
-## Quick Start
+## Integration Guides
 
-### 1. Installation
-
-```bash
-npm install tracernest-logger
-```
-
-### 2. Express Setup
+### 1. Express.js
 
 ```typescript
 import express from 'express';
@@ -263,7 +311,7 @@ const tracer = new TracerNestLogger({
 // Register TracerNest middleware before application routes
 app.use(tracer.middleware());
 
-// Your application routes
+// Application routes
 app.get('/api/users', (req, res) => {
   console.log('[Users] Fetching user directory');
   res.json([{ id: 1, name: 'Alice' }]);
@@ -280,7 +328,7 @@ app.listen(PORT, () => {
 });
 ```
 
-### 3. Fastify Setup
+### 2. Fastify
 
 ```typescript
 import Fastify from 'fastify';
@@ -297,7 +345,7 @@ fastify.addHook('onRequest', async (req, reply) => {
 fastify.listen({ port: 3000 });
 ```
 
-### 4. Native Node.js HTTP Server Setup
+### 3. Native Node.js HTTP Server
 
 ```typescript
 import { createServer } from 'node:http';
@@ -317,7 +365,7 @@ tracer.attach(server);
 server.listen(3000);
 ```
 
-### 5. Standalone Port Setup (Optional)
+### 4. Dedicated Standalone Port (Optional)
 
 ```typescript
 import { TracerNestLogger } from 'tracernest-logger';
@@ -354,7 +402,7 @@ const tracer = new TracerNestLogger({
 });
 ```
 
-*For comprehensive options, visit [docs/configuration.md](docs/configuration.md).*
+*For comprehensive options and advanced settings, visit [docs/configuration.md](docs/configuration.md).*
 
 ---
 
@@ -404,7 +452,7 @@ TracerNest Logger follows [Semantic Versioning (SemVer)](https://semver.org/):
 - **Minor (1.X.0):** New features, performance enhancements, and backward-compatible additions.
 - **Patch (1.0.X):** Bug fixes, security hardening, and documentation updates.
 
-Current Release: **`1.6.0`**
+Current Release: **`1.7.2`**
 
 ---
 
