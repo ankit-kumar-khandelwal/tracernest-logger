@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.0] - 2026-11-18
+
+### Changed
+- **Development Toolchain Updates:** Updated dev dependencies to their latest verified versions:
+  - `express`: `^5.3.0`
+  - `typescript`: `^7.0.2`
+  - `@types/express`: `^5.0.6`
+  - `@types/node`: `^22.20.5`
+- Synchronized root package-lock definitions and manifests.
+
 ## [1.6.0] - 2026-11-17
 
 ### Added

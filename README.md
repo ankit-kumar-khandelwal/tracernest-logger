@@ -696,7 +696,7 @@ TracerNest Logger follows [Semantic Versioning (SemVer)](https://semver.org/):
 - **Minor (1.X.0):** New features, performance enhancements, and backward-compatible additions.
 - **Patch (1.0.X):** Bug fixes, security hardening, and documentation updates.
 
-Current Release: **`1.6.0`**
+Current Release: **`1.7.1`**
 
 ---
 
