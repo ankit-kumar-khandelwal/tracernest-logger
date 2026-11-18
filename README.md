@@ -139,7 +139,7 @@ The dashboard user interface is accessible directly from your repository assets:
 
 ![TracerNest Banner](assets/tracernest-logger-banner.svg)
 
-*TracerNest embedded operations dashboard preview located at [assets/screenshots/dashboard-preview.jpge](assets/screenshots/dashboard-preview.jpeg).*
+*TracerNest embedded operations dashboard preview located at [assets/screenshots/dashboard-preview.jpeg](assets/screenshots/dashboard-preview.jpeg).*
 
 </div>
 
