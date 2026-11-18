@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.3] - 2026-11-18
+
+### CI/CD & Distribution
+- **Automated npm Publishing Workflow:** Added GitHub Actions workflow to publish releases directly to the npm registry with provenance and test gates.
+- **Synchronized Manifests:** Aligned root package manifests, issue templates, and documentation to release version `1.7.3`.
+
 ## [1.7.2] - 2026-11-18
 
 ### Documentation
