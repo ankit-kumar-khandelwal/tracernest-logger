@@ -67,10 +67,10 @@
   "author": "TracerNest-Logger Contributors <contact@tracernest.dev>",
   "license": "Apache-2.0",
   "devDependencies": {
-    "@types/express": "^5.0.0",
-    "@types/node": "^22.10.1",
-    "express": "^4.21.2",
-    "typescript": "^5.7.2"
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.5",
+    "express": "^5.3.0",
+    "typescript": "^7.0.2"
   },
   "peerDependencies": {
     "express": ">=4.0.0"
