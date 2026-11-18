@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.2] - 2026-11-18
+
+### Documentation
+- **Quick Start at Top:** Added a 3-line quick start snippet directly below the hero section for instant onboarding.
+- **Enhanced Flowcharts:** Added compact, high-contrast Mermaid diagrams for single-port architecture topology, production debugging triage, and storage dispatch.
+- **Removed External Image Dependencies:** Eliminated broken image references in favor of resilient ASCII terminal previews and native Mermaid flowcharts.
+
 ## [1.7.1] - 2026-11-18
 
 ### Documentation & Architecture
