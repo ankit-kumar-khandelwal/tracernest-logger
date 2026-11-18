@@ -1,10 +1,12 @@
 <div align="center">
 
-# TracerNest Logger
+# TracerNest
 
-**Zero-Dependency Node.js Application Telemetry Logger & Live Operations Dashboard**
+### Stop guessing what's happening inside your backend. See it with TracerNest.
 
-*Built for high-performance Node.js engineering teams with encrypted SQL storage, RBAC, automated HTTP request/response JSON interception, real client IP extraction, server health diagnostics, and graceful shutdown.*
+**Self-hosted observability and operations dashboard for Node.js applications.**
+
+*Centralized visibility into application logs, HTTP requests and responses, application health, operational diagnostics, and critical events through a configurable dashboard integrated directly into your existing backend.*
 
 ---
 
@@ -13,7 +15,10 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-10B981.svg?style=flat-square)](LICENSE)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-10B981.svg?style=flat-square)](package.json)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-38BDF8.svg?style=flat-square)](package.json)
-[![TypeScript Ready](https://img.shields.io/badge/TypeScript-Ready-3178C6.svg?style=flat-square)](src/index.ts)
+[![GitHub Stars](https://img.shields.io/github/stars/ankit-kumar-khandelwal/tracernest-logger?style=flat-square)](https://github.com/ankit-kumar-khandelwal/tracernest-logger/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/ankit-kumar-khandelwal/tracernest-logger?style=flat-square)](https://github.com/ankit-kumar-khandelwal/tracernest-logger/network/members)
+
+[**npm Package**](https://www.npmjs.com/package/tracernest-logger) &bull; [**GitHub Repository**](https://github.com/ankit-kumar-khandelwal/tracernest-logger) &bull; [**Documentation**](docs/introduction.md) &bull; [**Report an Issue**](https://github.com/ankit-kumar-khandelwal/tracernest-logger/issues)
 
 </div>
 
@@ -21,94 +26,218 @@
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Key Features](#key-features)
+- [The Problem We Solve](#the-problem-we-solve)
+- [Why TracerNest?](#why-tracernest)
+- [Dashboard & Telemetry Console](#dashboard--telemetry-console)
+- [Core Features](#core-features)
+  - [1. Application Logging](#1-application-logging)
+  - [2. API Request and Response Observability](#2-api-request-and-response-observability)
+  - [3. Application Health & System Diagnostics](#3-application-health--system-diagnostics)
+  - [4. Operations & Security](#4-operations--security)
+  - [5. Alerts & Integrations](#5-alerts--integrations)
+- [The Complete Request Lifecycle](#the-complete-request-lifecycle)
+- [Debug Production Issues Without Guesswork](#debug-production-issues-without-guesswork)
 - [Quick Start](#quick-start)
   - [1. Installation](#1-installation)
   - [2. Express Setup](#2-express-setup)
-  - [3. Fastify and Native HTTP Server Setup](#3-fastify-and-native-http-server-setup)
-- [Memory Management and Buffer Sizing](#memory-management-and-buffer-sizing)
-  - [Buffer Sizing Guidelines](#buffer-sizing-guidelines)
-  - [High Memory Safeguard Warning](#high-memory-safeguard-warning)
-- [Safe Body Sanitization and ORM Support](#safe-body-sanitization-and-orm-support)
-  - [Circular Reference and Stack Overflow Protection](#circular-reference-and-stack-overflow-protection)
-  - [Sensitive Data Masking](#sensitive-data-masking)
-- [Excluding Sensitive APIs and Routes](#excluding-sensitive-apis-and-routes)
-  - [1. Live Management via Web Dashboard](#1-live-management-via-web-dashboard)
-  - [2. Code-Based Configuration](#2-code-based-configuration)
-- [Dashboard and Telemetry Console](#dashboard-and-telemetry-console)
-  - [Midnight Dark Enterprise Interface](#midnight-dark-enterprise-interface)
-  - [Real-Time Terminal Log Explorer](#real-time-terminal-log-explorer)
-  - [Compact API Requests and JSON Inspector](#compact-api-requests-and-json-inspector)
-- [Server Health Diagnostics](#server-health-diagnostics)
-- [Production Graceful Shutdown](#production-graceful-shutdown)
-- [Real Client IP Behind Reverse Proxies](#real-client-ip-behind-reverse-proxies)
-- [Automated TTL Retention Policies](#automated-ttl-retention-policies)
-- [Telemetry Data Export](#telemetry-data-export)
-- [SQL Storage and Database Setup](#sql-storage-and-database-setup)
-  - [SQLite (Built-in Zero-Config)](#sqlite-built-in-zero-config)
-  - [MySQL Configuration](#mysql-configuration)
-  - [User-Defined Master Encryption Keys](#user-defined-master-encryption-keys)
-- [Hardened RBAC and Security Architecture](#hardened-rbac-and-security-architecture)
-  - [Role-Based Access Control](#role-based-access-control)
-  - [Root Administrator Setup](#root-administrator-setup)
-  - [CLI Admin Recovery Tool](#cli-admin-recovery-tool)
+  - [3. Fastify Setup](#3-fastify-setup)
+  - [4. Native Node.js HTTP Server Setup](#4-native-nodejs-http-server-setup)
+  - [5. Standalone Port Setup (Optional)](#5-standalone-port-setup-optional)
 - [Configuration Reference](#configuration-reference)
-- [Backward Compatibility](#backward-compatibility)
-- [Versioning Policy](#versioning-policy)
+- [Security & Privacy](#security--privacy)
+  - [Production Security Checklist](#production-security-checklist)
+- [Documentation Architecture](#documentation-architecture)
+- [Contributing & Community](#contributing--community)
 - [License](#license)
 
 ---
 
-## Overview
+## The Problem We Solve
 
-Modern web APIs and microservices generate significant volumes of telemetry. Reading logs via terminal dumps or shipping them to expensive third-party SaaS vendors introduces latency, recurring costs, compliance risks, and vendor lock-in.
+Every backend engineer has experienced the most frustrating kind of production incident:
 
-**TracerNest Logger** provides an embedded, self-hosted, **zero-runtime-dependency** live operations telemetry console that runs directly inside your Node.js application. It couples the visual clarity of Errsole with the design refinement of Linear and Vercel, fortified by enterprise-grade AES-256-GCM encryption and Scrypt authentication.
+1. **It worked in development.** Unit tests passed cleanly.
+2. **It passed QA testing.** Staging environments showed zero regressions.
+3. **It ran in production for thousands of requests without incident.**
+4. **An unpredicted edge-case request arrives and the API fails with an unexpected error.**
+
+When developers open their terminal or log aggregator to investigate, they encounter the **missing context trap**:
+
+```text
+[2026-11-18 10:14:02] ERROR: Cannot read properties of undefined (reading 'taxRate')
+    at calculateTaxes (/app/dist/services/tax.js:42:18)
+    at checkout (/app/dist/controllers/checkout.js:89:12)
+```
+
+The error stack trace tells you *where* the code broke, but fails to answer the critical questions required to reproduce and fix it:
+- What exact HTTP method and URL endpoint was called?
+- What query parameters were passed?
+- What was the client's payload (request body)?
+- Which client IP or user initiated the request?
+- What response payload and status code were returned?
+- How long did the request run before failing?
+- What application logs (`stdout`, `stderr`, debug traces) were emitted during that specific execution window?
+
+Without this execution context, reproducing the bug locally is pure speculation. Developers spend hours writing defensive code blindly or adding temporary log lines and waiting for the failure to strike again.
+
+**TracerNest eliminates this guesswork.** It acts as an embedded telemetry flight recorder for your Node.js backend, capturing incoming request parameters, outgoing response payloads, application logs, and system health in one self-hosted dashboard.
 
 ---
 
-## Architecture
+## Why TracerNest?
 
-```
-+------------------------------------------------------------------------+
-|                      TRACERNEST LOGGER ARCHITECTURE                    |
-|                                                                        |
-|   Incoming HTTP Request  --->  Client IP Normalizer (Proxy / CDN)      |
-|                                           |                            |
-|                                           v                            |
-|   Express / Fastify / Node  -->  Safe JSON Body Interception           |
-|                                  (Circular & ORM Protection)           |
-|                                           |                            |
-|                                           v                            |
-|   FastCrypto (AES-256-GCM)  -->  Ring Buffer (In-Memory Capacity)      |
-|                                           |                            |
-|                                           +--------> SQLite / MySQL    |
-|                                           |          (Isolated Folder) |
-|                                           v                            |
-|   Real-Time SSE Stream   --->  Midnight Dark Console (/tracernest)     |
-+------------------------------------------------------------------------+
-```
+TracerNest was built out of real production engineering experience to overcome two distinct operational limitations:
+
+### 1. No Mandatory Monitoring Port Overhead
+Existing self-hosted Node.js tools (such as Errsole) often require a separate monitoring port. In containerized environments, Kubernetes clusters, serverless containers, or locked-down enterprise VPCs, exposing a secondary port introduces real friction:
+- Additional load-balancer target groups, ingress rules, and security group rules.
+- Increased public network exposure and firewall change requests.
+- Port-binding conflicts in single-port container platforms.
+
+**TracerNest is designed around path-based integration.** The dashboard and telemetry APIs mount directly onto your existing HTTP application (e.g., `app.use(tracer.middleware())`). You access the complete console at `https://api.yourdomain.com/tracernest` with **zero extra ports required** for supported path-based access. *(For setups that prefer network isolation, an optional standalone listener `tracer.listen(8001)` is also provided.)*
+
+### 2. Embedded Zero-Dependency Reliability
+Many observability libraries drag dozens of external dependencies into your runtime bundle, introducing supply-chain risks, vulnerability alerts, and version conflicts. TracerNest maintains strictly **zero runtime dependencies** (`dependencies: {}`). It relies exclusively on native Node.js standard libraries (`node:crypto`, `node:http`, `node:sqlite`, `node:net`, `node:tls`).
+
+### Architectural Comparison
+
+| Architectural Characteristic | Traditional SaaS APM | Dedicated-Port Tools | TracerNest |
+| :--- | :--- | :--- | :--- |
+| **Hosting Model** | Third-party cloud vendor | Self-hosted | **Self-hosted** |
+| **Network Integration** | External agent daemon | Requires dedicated port | **Path-based on existing app (or dedicated port)** |
+| **Runtime Dependencies** | Heavy vendor SDKs | Multiple npm packages | **Zero runtime dependencies (`0`)** |
+| **Data Privacy & Control** | Data leaves infrastructure | Local SQLite / MySQL | **Encrypted local SQLite (`node:sqlite`) or MySQL** |
+| **Payload Observability** | Sampled / complex setup | Supported | **Automatic with circular & sensitive data masking** |
+| **Cost Predictability** | Volume-based SaaS billing | Free / Self-hosted | **Open-source (Apache 2.0)** |
+
+*Note: TracerNest is designed for in-process application observability, log inspection, and rapid production debugging. It complements rather than replaces fleet-wide distributed tracing platforms (such as OpenTelemetry).*
 
 ---
 
-## Key Features
+## Dashboard & Telemetry Console
 
-| Capability | Description |
-| :--- | :--- |
-| **Zero Runtime Dependencies** | Exactly `dependencies: {}`. Zero external packages, zero supply-chain vulnerabilities, and pristine `npm audit` reports. |
-| **Resilient Body Sanitization** | Fully circular-safe object traversal with ORM model normalization (Sequelize, Mongoose, TypeORM) and stack overflow prevention. |
-| **Memory Safeguard System** | Automatic inspection of system RAM with diagnostic warnings against excessive buffer allocation. |
-| **Midnight Dark Console** | High-density interface built on `#080B12` dark tones, Geist typography, JetBrains Mono code rendering, and Lucide SVG vectors. |
-| **Terminal Log Stream** | Real-time terminal log viewer with sticky headers, multi-field regex search, and dynamic counter pills (`ALL`, `INFO`, `WARN`, `ERROR`, `DEBUG`). |
-| **Compact API Inspector** | Uniform request cards displaying HTTP method, path, status, latency, client IP, expandable JSON payload drawers, and instant cURL generation. |
-| **Real Client IP Normalization** | Extracts verified client IP addresses behind Cloudflare, AWS ALB, Nginx, Caddy, Fastly, and RFC 7239 `Forwarded` proxies. |
-| **Server Health Diagnostics** | Authenticated `/api/health` diagnostics monitoring RSS/heap memory, uptime, event loop metrics, and database connectivity. |
-| **Graceful Shutdown Manager** | Automatic handling of `SIGTERM` and `SIGINT` signals, connection draining, buffer flushing, and custom teardown hooks. |
-| **Automated TTL Policies** | Custom retention rules to purge routine health checks or retain critical errors across configurable time horizons. |
-| **Dual SQL Storage** | Out-of-the-box SQLite with isolated folder persistence (`./.tracernest/`), or seamless integration with production MySQL pools. |
-| **Role-Based Access Control** | 4-tier RBAC (`admin`, `operator`, `auditor`, `viewer`), Scrypt password hashing, session isolation, and CLI-only admin recovery. |
+TracerNest features a refined, dark-mode operations console engineered for clarity under incident pressure.
+
+```
++----------------------------------------------------------------------------------------------------+
+|  TRACERNEST  |  Live Logs  |  API Requests  |  Health: OK  |  Settings         [Admin (Operator)]  |
++----------------------------------------------------------------------------------------------------+
+|  Search logs, endpoints, or regex...                      [ALL] [ERROR] [WARN] [INFO] [HTTP]       |
++----------------------------------------------------------------------------------------------------+
+|  10:14:02.891  HTTP  POST /api/checkout            500  (84ms)   198.51.100.42                     |
+|  10:14:02.890  STDERR Error: Cannot read properties of undefined (reading 'taxRate')               |
+|  10:14:02.840  STDOUT [Orders] Calculating tax rate for cart_99120                                 |
+|  10:13:58.120  HTTP  GET  /api/products?cat=tools  200  (12ms)   203.0.113.195                     |
++----------------------------------------------------------------------------------------------------+
+```
+
+### Visual Preview & Assets
+
+The dashboard user interface is accessible directly from your repository assets:
+
+<div align="center">
+
+![TracerNest Banner](assets/tracernest-logger-banner.svg)
+
+*TracerNest embedded operations dashboard preview located at [assets/screenshots/dashboard-preview.jpge](assets/screenshots/dashboard-preview.jpeg).*
+
+</div>
+
+---
+
+## Core Features
+
+Verified capabilities implemented in the codebase:
+
+### 1. Application Logging
+- **Console Output Interception:** Transparently intercepts `stdout` and `stderr` without disrupting standard terminal output or container logging pipelines.
+- **Structured Framework Support:** Automatically parses JSON structures and maps severity levels from Winston, Pino (numeric levels 10–60), and Bunyan.
+- **Real-Time Log Streaming:** Streams live log events to the browser dashboard via Server-Sent Events (SSE) with sub-millisecond latency.
+- **In-Memory Ring Buffer:** Retains recent logs in a memory-bounded circular buffer (`RingBuffer`) with configurable capacity (default: 5,000 entries).
+- **Multi-Field Filtering:** Search and filter by severity level (`error`, `warn`, `info`, `debug`), text substring, or regular expressions.
+
+### 2. API Request and Response Observability
+- **HTTP Interception:** Intercepts incoming requests and outgoing responses across Express, Fastify, and native Node.js HTTP servers.
+- **Payload Inspection:** Captures sanitized request bodies and response payloads (up to 512 KB default) for post-mortem analysis.
+- **Latency Tracking:** Measures request execution duration in milliseconds (`durationMs`).
+- **Safe Body Sanitization:** Recursively sanitizes JSON objects with circular reference protection (`WeakSet`) and depth limits, preventing call stack overflow crashes on ORM instances (Sequelize, Mongoose, TypeORM).
+- **Query Parameter Redaction (SEC-07):** Automatically masks sensitive query strings (`token`, `secret`, `password`, `key`, `auth`) in captured URLs.
+- **Route Exclusions:** Exclude high-frequency health endpoints or sensitive routes via globs (`/api/auth/*`), RegExps, predicates, or dynamically via the UI dashboard.
+
+### 3. Application Health & System Diagnostics
+- **Dual-Tier Health Endpoint (SEC-05):** Minimal public `/api/health` probe for Kubernetes/load-balancer liveness checks; authenticated requests receive full diagnostics.
+- **System Memory Metrics:** Real-time visibility into heap used, heap total, RSS, and heap usage percentage.
+- **Runtime Metrics:** Uptime duration counter, Node.js runtime version, process ID (PID), OS platform, and CPU architecture.
+- **Database & Telemetry Health:** Storage connection state, dialect (`sqlite` / `mysql`), buffer utilization percentage, and throughput per second.
+
+### 4. Operations & Security
+- **Zero Runtime Dependencies:** Exactly `dependencies: {}`. Zero supply-chain attack surface and pristine `npm audit` reports.
+- **Encrypted SQL Storage:** Encrypted local SQLite storage (`node:sqlite`) with auto-synchronized encrypted SQL file mirroring, or external MySQL.
+- **Data Protection:** Built-in AES-256-GCM symmetric encryption for database files and Scrypt password hashing with unique salts.
+- **Hardened RBAC:** Three role tiers (`Admin`, `Developer`, `Viewer`) with granular permission controls.
+- **Reverse Proxy Hardening (SEC-10):** Direct TCP socket extraction by default, trusted right-to-left X-Forwarded-For traversal, and dual-keyed login throttling (IP + account).
+- **Request Body Bounding (SEC-09):** Hard memory bounding on request streams with immediate listener detachment and HTTP 413 responses.
+- **CLI Password Recovery:** Emergency root password recovery tool (`npx tracernest-reset-admin`).
+
+### 5. Alerts & Integrations
+- **Zero-Dependency SMTP Email:** Pure Node.js TLS/TCP client for dispatching incident reports to team inboxes.
+- **Microsoft Teams Incoming Webhooks:** Formats and dispatches incident MessageCards directly to Teams channels.
+- **Automated Cooldown Throttling:** Built-in 30-second cooldown per channel prevents notification flooding during cascade failures.
+- **Interactive UI Testing:** Operators can trigger live test alerts directly from dashboard settings.
+
+---
+
+## The Complete Request Lifecycle
+
+TracerNest instruments the request-response lifecycle from entry to exit:
+
+```mermaid
+flowchart TD
+    A[Incoming HTTP Request] --> B[TracerNest Middleware]
+    B --> C[Extract Client IP & Sanitize Headers / Query]
+    C --> D[Capture Request Body Stream]
+    D --> E[Application Route / Controller]
+    E --> F[Application Execution]
+    F -->|stdout / stderr| G[Console Interceptor]
+    F --> H[Response Generated res.json / res.send]
+    H --> I[Capture Response Body & Calculate Duration]
+    C --> J[Assemble Structured Telemetry Entry]
+    I --> J
+    G --> J
+    J --> K[Apply TTL Retention Rules]
+    K --> L[In-Memory RingBuffer]
+    L --> M[SSE Broadcast to Dashboard]
+    L --> N[AES-256-GCM Encrypted SQL Store]
+    M --> O[Developer Investigation]
+```
+
+### Realistic Execution Boundaries
+- **In-Process Telemetry:** TracerNest executes inside the host Node.js application process.
+- **Process Exit Boundary:** If the Node.js process terminates abruptly due to a fatal OS signal (`SIGKILL`) or native C++ addon segmentation fault before the response completes, in-flight request logging cannot finish.
+- **Exception Capture:** For standard unhandled JavaScript exceptions or rejections, TracerNest's `stderr` interceptor captures the full stack trace before process exit.
+
+---
+
+## Debug Production Issues Without Guesswork
+
+When a production-only bug occurs, TracerNest enables rapid triage:
+
+1. **Locate the Failure:** Filter the live log stream by `[ERROR]` or search for the endpoint path (e.g., `/api/checkout`).
+2. **Inspect the Client Context:** Identify the verified client IP, exact timestamp, and duration of the failing call.
+3. **Inspect the Request Payload:** View the exact JSON body submitted by the client that triggered the edge case.
+4. **Inspect the Response:** Confirm the exact HTTP status code and error payload returned.
+5. **Correlate Terminal Logs:** Inspect application console logs emitted during the same execution window to trace internal service calls.
+6. **Reproduce Locally:** Copy the sanitized JSON payload into a local unit test, verify the fix, and deploy with confidence.
+
+### Current Correlation Capabilities vs. Future Enhancements
+
+| Capability | Current Status | Description |
+| :--- | :--- | :--- |
+| **Timestamp Correlation** | **Supported** | Millisecond-precision timestamps across HTTP requests, stdout, and stderr. |
+| **Client IP Association** | **Supported** | Group requests and errors originating from the same client peer address. |
+| **Payload Inspection** | **Supported** | Full request and response payload capture with recursive sensitive-data redaction. |
+| **Log Source Separation** | **Supported** | Clear classification of `http`, `stdout`, `stderr`, and `api` log streams. |
+| **Request Correlation IDs** | *Roadmap* | Automatic injection of `X-Request-Id` and `AsyncLocalStorage` context propagation to link console logs directly to parent HTTP requests. |
 
 ---
 
@@ -120,10 +249,6 @@ Modern web APIs and microservices generate significant volumes of telemetry. Rea
 npm install tracernest-logger
 ```
 
-*Requires Node.js 18.0.0 or higher.*
-
----
-
 ### 2. Express Setup
 
 ```typescript
@@ -131,585 +256,167 @@ import express from 'express';
 import { TracerNestLogger } from 'tracernest-logger';
 
 const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Body parsers (optional, TracerNest captures bodies with or without them)
 app.use(express.json());
 
-// Initialize TracerNest Logger
+// Initialize TracerNest
 const tracer = new TracerNestLogger({
-  path: '/tracernest',       // Dashboard and API base route
-  title: 'Production API Console',
-  bufferSize: 5000,          // In-memory circular buffer capacity
-  interceptStdout: true,     // Capture console.log automatically
-  interceptStderr: true,     // Capture console.error automatically
-  interceptHttp: true        // Capture HTTP requests, JSON payloads, and response latencies
+  path: '/tracernest',              // Dashboard mount path
+  title: 'Production API Monitor',  // Custom UI title
+  bufferSize: 5000,                 // Ring buffer capacity
+  dataDir: './.tracernest'          // Storage directory
 });
 
 // Register TracerNest middleware before application routes
 app.use(tracer.middleware());
 
-// Application business route
-app.post('/api/v1/orders', (req, res) => {
-  console.log('[OrderService] Processing order for user:', req.body.userId);
-  res.status(201).json({ orderId: 'ord_9981', status: 'created', timestamp: Date.now() });
+// Your application routes
+app.get('/api/users', (req, res) => {
+  console.log('[Users] Fetching user directory');
+  res.json([{ id: 1, name: 'Alice' }]);
 });
 
-// Start HTTP server
-const server = app.listen(3000, () => {
-  // Attach graceful shutdown hooks automatically
-  tracer.attachServer(server);
-  console.log('Application running on http://localhost:3000');
-  console.log('TracerNest Console available at http://localhost:3000/tracernest');
+app.post('/api/checkout', (req, res) => {
+  console.warn('[Checkout] Processing payment');
+  res.status(200).json({ status: 'confirmed' });
+});
+
+app.listen(PORT, () => {
+  console.log(`Server: http://localhost:${PORT}`);
+  console.log(`TracerNest: http://localhost:${PORT}/tracernest`);
 });
 ```
 
----
-
-### 3. Fastify and Native HTTP Server Setup
-
-TracerNest Logger functions with any native Node.js HTTP framework without requiring Express:
+### 3. Fastify Setup
 
 ```typescript
-import http from 'node:http';
+import Fastify from 'fastify';
+import { TracerNestLogger } from 'tracernest-logger';
+
+const fastify = Fastify();
+const tracer = new TracerNestLogger({ path: '/tracernest' });
+
+fastify.addHook('onRequest', async (req, reply) => {
+  const handled = await tracer.handleRequest(req.raw, reply.raw);
+  if (handled) reply.hijack();
+});
+
+fastify.listen({ port: 3000 });
+```
+
+### 4. Native Node.js HTTP Server Setup
+
+```typescript
+import { createServer } from 'node:http';
 import { TracerNestLogger } from 'tracernest-logger';
 
 const tracer = new TracerNestLogger({ path: '/tracernest' });
 
-const server = http.createServer(async (req, res) => {
-  // 1. Let TracerNest handle console and telemetry endpoints
+const server = createServer(async (req, res) => {
   const handled = await tracer.handleRequest(req, res);
   if (handled) return;
 
-  // 2. Handle application routes
-  if (req.url === '/api/ping') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'pong' }));
-    return;
-  }
-
-  res.writeHead(404).end('Not Found');
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ message: 'Hello World' }));
 });
 
-tracer.attachServer(server);
-server.listen(4000);
+tracer.attach(server);
+server.listen(3000);
 ```
 
----
-
-## Memory Management and Buffer Sizing
-
-TracerNest Logger retains active logs in an in-memory circular `RingBuffer` for fast O(1) ingestion, real-time filtering, and sub-millisecond SSE broadcasting.
-
-### Buffer Sizing Guidelines
-
-Each enriched log entry (metadata, request/response JSON payloads, headers, client IP, stack traces) consumes approximately **2 KB to 4 KB** of memory depending on payload size.
-
-| Buffer Size | Estimated RAM Footprint | Recommended Environment |
-| :--- | :--- | :--- |
-| **2,000** | ~6 MB - 8 MB | Microservices, AWS Lambda, Docker containers with <= 512 MB RAM |
-| **5,000** *(Default)* | ~15 MB - 20 MB | Standard web applications, REST APIs, general production services |
-| **10,000 - 20,000** | ~30 MB - 80 MB | High-traffic monoliths and high-concurrency payment/order gateways |
-| **> 50,000** | > 150 MB - 300+ MB | High-memory instances only (Requires caution against Node.js OOM) |
-
-### High Memory Safeguard Warning
-
-At application startup, TracerNest Logger evaluates the configured `bufferSize` against system memory via `os.freemem()` and `os.totalmem()`.
-
-If `bufferSize` exceeds **50,000** entries, or if the estimated memory footprint exceeds **25% of available free RAM**, TracerNest Logger automatically outputs a structured diagnostic warning to `console.warn`:
-
-```text
-[TracerNest-Logger WARNING] Configured bufferSize (75,000 entries) is unusually high.
-Estimated in-memory log footprint is ~220 MB (Available free RAM: 512 MB, Total system RAM: 2048 MB).
-High buffer sizes may cause excessive memory consumption, GC pressure, or process crashes due to Node.js Out-Of-Memory (OOM).
-Recommended bufferSize is between 2,000 and 20,000 entries. For historical log analysis, rely on SQLite/MySQL database storage or TTL retention policies.
-```
-
-> **Best Practice:** Maintain `bufferSize` between 2,000 and 20,000. For historical audits and long-term analysis, utilize the built-in SQLite/MySQL persistent store and configure automated TTL retention policies rather than inflating in-memory capacity.
-
----
-
-## Safe Body Sanitization and ORM Support
-
-### Circular Reference and Stack Overflow Protection
-
-When working with Object-Relational Mappers (such as **Sequelize**, **Mongoose**, or **TypeORM**), model instances often contain complex association graphs, database connection pools, query runners, and circular references (e.g., `RoleMaster` -> `rolePrivileges` -> `RolePrivilegesMapping` -> `RoleMaster`).
-
-Passing these instances directly into standard loggers can trigger infinite recursion and crash Node.js with:
-`RangeError: Maximum call stack size exceeded`.
-
-TracerNest Logger incorporates a hardened, circular-safe sanitization engine:
-1. **Circular Reference Detection:** Tracks visited object graphs using `WeakSet`. Circular links are safely detected and replaced with `"[Circular]"` without recursing.
-2. **ORM Model Normalization:** Detects `.toJSON()` implementations on model instances and extracts clean data values, bypassing internal database connection handles.
-3. **Depth Capping:** Enforces a maximum recursion depth limit (8 levels). Deeper nesting is safely truncated (`"[Truncated: Max Depth]"`).
-4. **Special Type Handling:** Explicitly formats `Buffer` (`"[Buffer X bytes]"`), `Date` (ISO string), `Error` (name, redacted message, redacted stack), `RegExp`, `Socket`, and `Stream` instances.
-5. **Collection Bounds:** Limits large arrays and object keys to 250 elements per level, preventing CPU starvation from malicious or oversized inputs.
-6. **Top-Level Fail-Safe:** Wraps all body inspection in safe try/catch handlers, guaranteeing that telemetry recording **never crashes the host application under any circumstance**.
-
-### Sensitive Data Masking
-
-Request and response bodies are automatically scanned and redacted:
-- **Default Sensitive Keys:** `password`, `token`, `secret`, `apiKey`, `authorization`, `creditCard`, `ssn`, `cvv`, `pin`, `privateKey`.
-- **Bearer Tokens & JWTs:** Pattern-matched and masked as `Bearer [REDACTED_TOKEN]`.
-- **API Keys:** Masks OpenAI (`sk-`), GitHub (`ghp_`), Stripe (`sk_live_`), and Slack (`xoxb-`) keys.
-- **Credit Cards:** Validates 13-19 digit Luhn-compatible card patterns, masking all but the last 4 digits (`****-****-****-1234`).
-
-Custom sensitive keys and headers can be added via configuration:
+### 5. Standalone Port Setup (Optional)
 
 ```typescript
-const tracer = new TracerNestLogger({
-  sensitiveFieldKeys: ['panNumber', 'bankAccount', 'aadhaar'],
-  sensitiveHeaders: ['x-internal-secret', 'x-vendor-token']
+import { TracerNestLogger } from 'tracernest-logger';
+
+const tracer = new TracerNestLogger({ path: '/tracernest' });
+
+// Listen on an isolated internal port
+tracer.listen(8001, '127.0.0.1', () => {
+  console.log('TracerNest standalone dashboard: http://127.0.0.1:8001/tracernest');
 });
 ```
-
----
-
-## Excluding Sensitive APIs and Routes
-
-Enterprise services process endpoints that handle financial transactions, authentication credentials, or high-frequency health checks that should never be recorded in log files or memory buffers.
-
-TracerNest Logger supports dual-mode route exclusion: **live dynamic management in the web dashboard** and **static code configuration**.
-
-### 1. Live Management via Web Dashboard
-
-Navigate to the **Skip Sensitive APIs** panel in the dashboard:
-- **Instant Real-Time Effect:** Exclusion rules take effect immediately without needing to restart the Node.js server.
-- **One-Click Quick Skip:** While inspecting any intercepted request in the API Requests view, click **Skip Route** on the card drawer to exclude that endpoint immediately.
-- **Method & Wildcard Filters:** Exclude specific HTTP methods (`POST`, `GET`, etc.) or all methods, using exact paths (`/api/auth/login`) or wildcards (`/api/v1/checkout/*`).
-- **Pause & Resume:** Temporarily toggle rules between Active and Paused with a single switch.
-- **SQL Persistence:** UI-configured rules are stored in the SQL `system_meta` table and persist across application restarts.
-
-### 2. Code-Based Configuration
-
-You can also supply exclusion rules during initialization via `excludeRoutes` (aliases: `excludePaths`, `ignoreRoutes`):
-
-```typescript
-const tracer = new TracerNestLogger({
-  excludeRoutes: [
-    '/api/auth/login',                                // Exact route path
-    '/api/payments/*',                                // Wildcard matching all subpaths
-    new RegExp('^/api/v1/checkout'),                  // Regular expression
-    { path: '/api/webhooks/stripe', method: 'POST' }, // Specific path + HTTP method
-    (req) => req.headers['x-skip-log'] === 'true'     // Custom dynamic predicate
-  ]
-});
-```
-
-Excluded routes pass through your server untouched, completely bypassing the log ring buffer, live SSE streams, and SQL storage.
-
----
-
-## Dashboard and Telemetry Console
-
-### Midnight Dark Enterprise Interface
-
-The console UI is self-contained and served directly from memory with zero external asset dependencies:
-- **Color Palette:** Midnight Deep Background (`#080B12`), Card Surfaces (`#111827`), Subtle Borders (`#253047`), and Accent Highlights (`#38BDF8` / `#6366F1`).
-- **Typography:** **Geist** for structural readability and **JetBrains Mono** for monospace logs, URLs, IP addresses, and JSON payloads.
-- **Iconography:** Clean, thin-stroke Lucide SVG vectors (`stroke-width="1.75"`).
-- **Zero Native Popups:** Replaces browser `alert()` and `confirm()` dialogs with customized, non-blocking modal interfaces.
-
-### Real-Time Terminal Log Explorer
-
-- **Structured Log Grid:** Sticky table headers with columns for Timestamp, Level Pill, Source, and Message Content.
-- **Live Search & Regex:** Real-time multi-field search across messages, paths, IPs, and nested metadata. Toggle full regex matching with the `.*` control.
-- **Interactive Counters:** Reactive filter pills displaying real-time record counts for `ALL`, `INFO`, `WARN`, `ERROR`, and `DEBUG`.
-- **Chronological Sorting:** Toggle between **Newest First** and **Oldest First** with one click.
-- **Full Inspector Drawer:** Click any log row to open detailed metadata, process IDs, and stack traces.
-
-### Compact API Requests and JSON Inspector
-
-- **Uniform Single-Line Rows:** Displays HTTP Method badge, Request Path, Status Pill, Latency, Client IP, and Timestamp.
-- **Side-by-Side Payload View:** Inspect formatted Request JSON and Response JSON side-by-side with syntax highlighting.
-- **Copy as cURL:** Copy an executable `curl` command for any intercepted API request including headers and body in one click.
-
----
-
-## Server Health Diagnostics
-
-TracerNest Logger includes a built-in health diagnostics endpoint accessible at `/api/health` and `/health`:
-
-```bash
-curl http://localhost:3000/tracernest/api/health
-```
-
-**Sample Response (`200 OK`):**
-
-```json
-{
-  "status": "healthy",
-  "uptime": 172800,
-  "uptimeFormatted": "2d 0h 0m 0s",
-  "timestamp": "2026-11-17T09:30:00.000Z",
-  "process": {
-    "pid": 4210,
-    "nodeVersion": "v22.10.1",
-    "platform": "win32",
-    "arch": "x64"
-  },
-  "memory": {
-    "rssMb": 48.2,
-    "heapTotalMb": 28.5,
-    "heapUsedMb": 18.3,
-    "externalMb": 2.1,
-    "heapUsagePercent": 64.2
-  },
-  "database": {
-    "dialect": "sqlite",
-    "status": "connected"
-  },
-  "logs": {
-    "bufferCount": 1240,
-    "capacity": 5000,
-    "totalPurged": 850
-  }
-}
-```
-
-The console header displays a real-time status pill (`HEALTHY` in emerald, `DEGRADED` in amber, `UNHEALTHY` in rose) and opens an interactive diagnostic modal displaying live memory and system telemetry.
-
----
-
-## Production Graceful Shutdown
-
-During deployment rollouts and container scale-downs, Node.js applications receive `SIGTERM` or `SIGINT` signals.
-
-TracerNest Logger includes an integrated `GracefulShutdownManager`:
-1. Intercepts `SIGTERM` and `SIGINT` signals automatically.
-2. Broadcasts a Server-Sent Event (SSE) shutdown alert to all connected console sessions.
-3. Stops accepting new incoming connections and allows in-flight HTTP requests to drain within a configurable timeout (default: `10,000 ms`).
-4. Flushes the log ring buffer and commits pending SQL transactions.
-5. Restores original `process.stdout` and `process.stderr` streams.
-6. Executes registered custom asynchronous cleanup handlers.
-
-```typescript
-const tracer = new TracerNestLogger({
-  gracefulShutdown: {
-    timeoutMs: 15000, // Maximum time to wait for in-flight requests to complete
-    onShutdown: async () => {
-      console.log('Closing database connection pools...');
-      await databasePool.end();
-    }
-  }
-});
-```
-
----
-
-## Real Client IP Behind Reverse Proxies
-
-When hosting behind reverse proxies, CDNs, or load balancers, `req.socket.remoteAddress` reflects the internal proxy IP rather than the client.
-
-TracerNest Logger automatically extracts and verifies the true client IP using prioritized header analysis:
-
-1. `cf-connecting-ip` *(Cloudflare)*
-2. `x-real-ip` *(Nginx, Caddy)*
-3. `true-client-ip` *(Akamai, Cloudflare Enterprise)*
-4. `fastly-client-ip` *(Fastly)*
-5. `x-forwarded-for` *(First public IP in comma-separated proxy chain)*
-6. `x-client-ip`
-7. `forwarded` *(RFC 7239 standard `for=...` directive)*
-8. `req.socket.remoteAddress` *(Direct socket fallback)*
-
-IPv6-mapped IPv4 addresses (e.g., `::ffff:192.168.1.1` -> `192.168.1.1`) and IPv6 loopbacks (`::1` -> `127.0.0.1`) are normalized automatically.
-
----
-
-## Automated TTL Retention Policies
-
-Manage database and memory utilization by defining Time-To-Live (TTL) eviction policies:
-
-```typescript
-const tracer = new TracerNestLogger({
-  ttl: {
-    defaultTtlSeconds: 86400 * 7, // Retain standard logs for 7 days
-    cleanupIntervalMs: 60000,      // Run automated background eviction every 60 seconds
-    rules: [
-      {
-        id: 'purge-health-checks',
-        name: 'Purge Health Check Pings',
-        pattern: '/health|/healthz|/ping',
-        ttlSeconds: 60             // Evict health checks after 60 seconds
-      },
-      {
-        id: 'retain-errors',
-        name: 'Retain Error Logs',
-        level: 'error',
-        ttlSeconds: 86400 * 30     // Retain critical errors for 30 days
-      }
-    ]
-  }
-});
-```
-
-TTL policies can also be managed live in the dashboard under the **TTL & Retention** tab.
-
----
-
-## Telemetry Data Export
-
-Export telemetry records at any time using the precision export dialog:
-
-- **Three Export Formats:**
-  - **Structured JSON (`.json`):** Full metadata, HTTP headers, request/response JSON payloads, and timestamps.
-  - **Tabular CSV (`.csv`):** Spreadsheet format compatible with Excel and Google Sheets.
-  - **Newline Delimited JSON (`.ndjson`):** Streaming format designed for pipeline ingestion into ELK, Datadog, or Splunk.
-- **Selectable Scope:** Export either **Filtered Query Logs** (matching active level, search, or source filters) or the **Entire Ring Buffer**.
-- **Secure Download:** Streams via in-memory authenticated blobs with zero credential exposure in URLs.
-
----
-
-## SQL Storage and Database Setup
-
-### SQLite (Built-in Zero-Config)
-
-By default, TracerNest Logger runs on built-in SQLite with zero external dependencies. All database and rollback journal files are automatically isolated inside a dedicated folder (`./.tracernest/`):
-- `./.tracernest/tracernest-logger.sqlite` &mdash; SQLite database.
-- `./.tracernest/tracernest-logger.sqlite-journal` &mdash; Transaction rollback journal.
-- `./.tracernest/tracernest-logger.sql` &mdash; Auto-synchronized encrypted SQL file.
-
-```typescript
-// Default: automatically creates and initializes files inside ./.tracernest/
-const tracer = new TracerNestLogger();
-
-// Custom Folder: initialize files inside any directory of your choice
-const tracer = new TracerNestLogger({
-  dataDir: './tracernest-data'
-});
-
-// Explicit Custom Paths
-const tracer = new TracerNestLogger({
-  dialect: 'sqlite',
-  sqliteFilePath: './data/custom.sqlite',
-  sqlFilePath: './data/custom.sql'
-});
-```
-
-### MySQL Configuration
-
-To persist telemetry directly in your production MySQL database:
-
-```typescript
-import mysql from 'mysql2/promise';
-
-// Option A: Reusing your application's existing connection pool
-const pool = mysql.createPool({ host: 'localhost', user: 'root', database: 'myapp' });
-
-const tracer = new TracerNestLogger({
-  dialect: 'mysql',
-  tablePrefix: 'tracenest_', // Namespaces all tables safely (e.g., tracenest_users)
-  mysql: { pool }
-});
-
-// Option B: Providing connection credentials directly
-const tracer = new TracerNestLogger({
-  dialect: 'mysql',
-  mysql: {
-    host: '127.0.0.1',
-    port: 3306,
-    user: 'app_user',
-    password: process.env.DB_PASSWORD,
-    database: 'telemetry_db'
-  }
-});
-```
-
-All persistent tables are automatically generated on initial startup:
-- `tracenest_users` &mdash; Encrypted credentials, roles, and password salts.
-- `tracenest_alert_configs` &mdash; Webhook, Slack, Discord, and Email notification rules.
-- `tracenest_audit_logs` &mdash; Tamper-evident administrative audit trail.
-- `tracenest_system_meta` &mdash; Schema versioning, instance metadata, and dynamic exclusion rules.
-
-### User-Defined Master Encryption Keys
-
-TracerNest Logger uses authenticated **AES-256-GCM** with random 96-bit initialization vectors and 128-bit authentication tags to encrypt integration credentials (SMTP passwords, webhook URLs, and alert settings) at rest.
-
-In accordance with strict security standards (resolving **SEC-08**), **encryption keys are never stored inside the database**. Operators can define their own encryption keys directly in code or via environment variables:
-
-#### 1. Code-Based Key Configuration
-```typescript
-const tracer = new TracerNestLogger({
-  // Provide a custom master key (minimum 16 characters, 32 characters recommended)
-  secret: 'my-custom-production-key-32-chars-long!',
-  // or via alias:
-  // masterKey: 'my-custom-production-key-32-chars-long!'
-});
-```
-
-#### 2. Environment Variable Configuration (Recommended for 12-Factor Deployments)
-Set `TRACERNEST_SECRET` in your environment (e.g., Kubernetes Secret, AWS SSM Parameter Store, or Docker `.env`):
-
-```bash
-export TRACERNEST_SECRET="your-high-entropy-master-encryption-key-here"
-```
-
-#### 3. Automatic Independent Key Generation
-If no key is explicitly supplied, TracerNest Logger automatically generates an independent 256-bit cryptographically secure key and stores it in an isolated, protected file (`./.tracernest/.master.key` with restricted `0600` filesystem permissions) **outside the database**. This ensures that an unauthorized copy or dump of the SQLite `.sqlite` or `.sql` file cannot be decrypted without the separate external key.
-
----
-
-## Hardened RBAC and Security Architecture
-
-### Role-Based Access Control
-
-TracerNest Logger enforces role-based access control across four predefined roles:
-
-| Role | Permissions |
-| :--- | :--- |
-| **`admin`** | Full access: inspect logs, stream, export, manage users, configure alerts, edit TTL retention, manage excluded routes, and inspect system metrics. |
-| **`operator`** | Read logs, stream live SSE, trigger test alerts, and view diagnostics. Cannot manage users or delete records. |
-| **`auditor`** | Read-only access to audit logs, user change events, and security access logs. |
-| **`viewer`** | Read-only access to application logs. |
-
-### Root Administrator Setup
-
-Upon visiting the console for the first time, TracerNest Logger detects that no administrative account exists and displays the **First-Time Administrator Setup** screen. Passwords are salted with 128-bit cryptographic salts and hashed using **Scrypt**.
-
-Authentication sessions are maintained in browser `sessionStorage`, ensuring tokens are automatically cleared when the browser tab is closed.
-
-### CLI Admin Recovery Tool
-
-To protect against remote account takeovers, **web-based password reset endpoints are disabled** and return `403 Forbidden`.
-
-If an administrator loses their credentials, access can only be restored directly on the server through the terminal CLI:
-
-```bash
-npx tracernest-reset-admin
-```
-
-*(or via npm script: `npm run reset--admin--user`)*
-
-**CLI Interactive Output:**
-
-```
-============================================================
-       TRACERNEST LOGGER: SECURE ADMIN RECOVERY UTILITY
-============================================================
-Target SQLite DB : ./.tracernest/tracernest-logger.sqlite
-Encrypted SQL    : ./.tracernest/tracernest-logger.sql
-
-Root administrator account found: "admin"
-Enter new temporary password (leave empty to generate secure OTP):
-
-Generated Cryptographically Secure One-Time Password:
-------------------------------------------------------------
-  Username : admin
-  One-Time : Tn9#kL2!vQ8@mZ4$
-------------------------------------------------------------
-[SUCCESS] Root administrator password successfully updated!
-Mandatory password rotation will be enforced upon initial login.
-```
-
-### Reverse Proxy and Trusted Proxy Allowlist (SEC-10 Hardening)
-
-In direct-to-application deployments, clients can forge forwarding headers (such as `X-Forwarded-For` or `CF-Connecting-IP`) in an attempt to spoof their identity or evade rate limiters.
-
-To eliminate this vulnerability (**SEC-10**), TracerNest Logger **defaults to the immediate TCP socket peer address** (`trustProxy: false`). Forwarding headers are only inspected when the immediate connection originates from a verified, trusted reverse proxy:
-
-```typescript
-const tracer = new TracerNestLogger({
-  // Configure trusted proxies (Nginx, Cloudflare, AWS ALB, Caddy)
-  trustProxy: ['127.0.0.1', '10.0.0.0/8', '172.16.0.0/12']
-  
-  // Or trust all upstream reverse proxies (when protected by cloud load balancer):
-  // trustProxy: true
-  
-  // Or loopback only:
-  // trustProxy: 'loopback'
-  
-  // Or custom validation predicate:
-  // trustProxy: (ip) => ip.startsWith('10.244.')
-});
-```
-
-When a trusted proxy chain is verified, proxy headers are traversed backwards from the trusted end (right-to-left), ensuring the first untrusted caller is identified as the client and preventing attacker-injected prefixes from succeeding.
-
-### Dual Login Throttling and Bounded Limiter Memory
-
-Login endpoints enforce dual-keyed protection:
-1. **Peer IP Throttling (`login:ip:<ip>`):** Rapid authentication requests from the same network connection are rate limited after 5 failed attempts per 15-minute window.
-2. **Account-Keyed Throttling (`login:user:<username>`):** Distributed brute-force attacks that attempt passwords against a specific administrative username across multiple IPs are automatically throttled after 5 failed attempts.
-3. **Bounded Memory Storage:** The rate limiter memory cache is strictly capped (`maxEntries: 10000`), automatically evicting expired keys and using FIFO eviction when full to prevent memory exhaustion attacks.
-
-### Safe Request Body Streaming and Bounding (SEC-09 Hardening)
-
-To prevent denial-of-service and memory exhaustion via oversized request payloads (**SEC-09**):
-- **Upfront Content-Length Checking:** Requests with a `Content-Length` header exceeding the 1 MiB limit are rejected immediately with `413 Payload Too Large` without buffering.
-- **Active Stream Disconnect:** For chunked transfers, if accumulated bytes exceed 1 MiB, stream data listeners are removed immediately, buffered memory is reclaimed, the stream is drained via `req.resume()`, and `413 Payload Too Large` is returned to the client.
 
 ---
 
 ## Configuration Reference
 
-Options accepted by `new TracerNestLogger(options)`:
-
-| Option | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `path` | `string` | `'/tracernest'` | Base route path where the console dashboard and API are hosted. |
-| `title` | `string` | `'TracerNest-Logger Console'` | Application title displayed in the browser tab and sidebar header. |
-| `logo` | `string` | `DEFAULT_LOGO` | Custom logo image URL, Data URI (base64/SVG), or local file path. |
-| `dialect` | `'sqlite' \| 'mysql'` | `'sqlite'` | Database engine for persistent metadata and user accounts. |
-| `dataDir` | `string` | `'./.tracernest'` | Dedicated folder directory where SQLite database, journal, and SQL export files are initialized. |
-| `sqliteFilePath` | `string` | `'./.tracernest/tracernest-logger.sqlite'` | Explicit file path for SQLite database. |
-| `sqlFilePath` | `string` | `'./.tracernest/tracernest-logger.sql'` | Explicit file path for the auto-synchronized encrypted SQL file. |
-| `mysql` | `MySqlConfig` | `undefined` | MySQL connection credentials or an existing `mysql2` client/pool. |
-| `tablePrefix` | `string` | `'tracenest_'` | Prefix applied to all TracerNest database tables. |
-| `bufferSize` | `number` | `5000` | Maximum number of log records retained in the circular ring buffer (2,000 - 20,000 recommended). |
-| `interceptStdout` | `boolean` | `true` | Automatically capture and route `process.stdout` into the console. |
-| `interceptStderr` | `boolean` | `true` | Automatically capture and route `process.stderr` into the console. |
-| `interceptHttp` | `boolean` | `true` | Automatically intercept and log HTTP request/response JSON payloads. |
-| `excludeRoutes` | `RouteFilterRule[]` | `[]` | Route paths, wildcards (`'/api/auth/*'`), RegExps, method objects, or predicates to exclude from logging. |
-| `excludePaths` | `RouteFilterRule[]` | `[]` | Alias for `excludeRoutes`. |
-| `sensitiveHeaders` | `string[]` | `[...]` | Additional custom HTTP header names to mask as `[REDACTED]` in request logs. |
-| `sensitiveFieldKeys` | `string[]` | `[...]` | Additional JSON field keys/fragments to mask in request and response bodies. |
-| `maxHttpBodyBytes` | `number` | `524288` (512 KB) | Maximum request/response body size buffered for inspection. |
-| `redactSensitive` | `boolean` | `true` | Automatically masks credit cards, bearer tokens, API keys, and passwords. |
-| `customRedactionPatterns` | `RegExp[]` | `[]` | Additional regex patterns to redact before storing logs. |
-| `ttl` | `TTLConfig` | See TTL section | Time-To-Live retention rules and eviction schedules. |
-| `gracefulShutdown` | `boolean \| GracefulShutdownOptions` | `true` | Automatically listens for `SIGTERM`/`SIGINT` and handles connection draining. |
-| `healthCheck` | `boolean` | `true` | Enables the `/api/health` diagnostics endpoint. |
-| `trustProxy` | `boolean \| string \| string[] \| Function` | `false` | Trusted proxy allowlist for reverse proxy deployments (SEC-10). When false, socket peer address is used. |
-| `rateLimit` | `RateLimiterOptions` | `{ maxAttempts: 5, windowMs: 900000, maxEntries: 10000 }` | Rate limiting options for authentication attempts. |
-| `csp` | `string \| boolean` | `undefined` | Custom Content-Security-Policy string, or `false` to disable built-in CSP headers. |
-| `sessionDurationSeconds` | `number` | `86400` (24h) | Stateless HMAC token expiration window in seconds. |
-| `secret` | `string` | `Auto-generated` | Master secret key used for HMAC signing and AES-256-GCM SQL data encryption at rest. Can also be set via `process.env.TRACERNEST_SECRET`. |
-| `masterKey` | `string` | `Auto-generated` | Alias for `secret`: user-defined key for encrypting SQL alert credentials at rest. |
-
----
-
-## Backward Compatibility
-
-TracerNest Logger provides full backward compatibility for legacy imports:
-
 ```typescript
-// Modern Import (Recommended)
-import { TracerNestLogger } from 'tracernest-logger';
-
-// Backward-Compatible Named Imports
-import { TraceNest, LogVault } from 'tracernest-logger';
+const tracer = new TracerNestLogger({
+  path: '/tracernest',              // Dashboard mount path (default: '/tracernest')
+  title: 'Production Telemetry',    // Dashboard browser tab title
+  bufferSize: 5000,                 // Circular in-memory buffer capacity
+  dataDir: './.tracernest',         // SQLite database & encryption key folder
+  masterKey: process.env.KEY,       // 32+ char AES-256-GCM master encryption key
+  dialect: 'sqlite',                // 'sqlite' | 'mysql'
+  trustProxy: false,                // Reverse proxy trust (false | true | string[] | CIDR)
+  maxHttpBodyBytes: 524288,         // Max request/response body capture (512 KB)
+  interceptStdout: true,            // Intercept console.log
+  interceptStderr: true,            // Intercept console.error
+  interceptHttp: true,              // Intercept HTTP request & response payloads
+  sensitiveHeaders: ['x-secret'],   // Custom header names to redact
+  sensitiveFieldKeys: ['card_no'],  // Custom JSON keys to redact
+  excludeRoutes: ['/healthz'],      // Routes excluded from HTTP logging
+  gracefulShutdown: true            // Automatic SIGINT/SIGTERM handling
+});
 ```
 
----
-
-## Versioning Policy
-
-TracerNest Logger follows [Semantic Versioning (SemVer)](https://semver.org/):
-- **Major (X.0.0):** Breaking API changes or schema modifications requiring explicit migration steps.
-- **Minor (1.X.0):** New features, performance enhancements, and backward-compatible additions.
-- **Patch (1.0.X):** Bug fixes, security hardening, and documentation updates.
-
-Current Release: **`1.7.1`**
+*For comprehensive options, visit [docs/configuration.md](docs/configuration.md).*
 
 ---
 
-## Community & Contributing
+## Security & Privacy
 
-We welcome contributions of all forms from the community!
-- **[Contributing Guide](CONTRIBUTING.md):** Development setup, zero-dependency policy, and PR submission guidelines.
-- **[Code of Conduct](CODE_OF_CONDUCT.md):** Standards and expectations for an inclusive, welcoming community.
-- **[Security Policy](SECURITY.md):** Responsible vulnerability reporting and security architecture details.
-- **[Changelog](CHANGELOG.md):** Release history and migration notes.
+TracerNest is hardened against common web and API attack vectors:
+- **Scrypt Password Hashing:** Credentials protected by native `crypto.scrypt` with unique salts.
+- **Timing-Safe Verification (SEC-01):** Constant-time hash verification via `crypto.timingSafeEqual`.
+- **Token Invalidation (SEC-02):** Immediate token revocation on user role modification.
+- **Stream Bounding (SEC-09):** Memory bounds on request streams with immediate listener detachment and HTTP 413 responses.
+- **Proxy Header Defense (SEC-10):** Direct TCP socket IP extraction by default and reverse traversal from trusted proxy ends.
+- **Dual Login Throttling (SEC-10):** Independent IP-level and account-level rate limiting on login attempts.
+- **Content Security Policy (CSP):** Embedded dashboard serves strict CSP headers.
+
+### Production Security Checklist
+
+- [ ] Set a strong `masterKey` passphrase (32+ characters) via environment variable.
+- [ ] Configure `trustProxy` to match your reverse proxy CIDR (or leave `false` for direct connections).
+- [ ] Restrict access to the dashboard path (`/tracernest`) via VPN or reverse proxy allowlists where appropriate.
+- [ ] Review `excludeRoutes` to omit sensitive authentication endpoints (`/api/auth/login`) from payload capture.
+- [ ] Terminate TLS / HTTPS at your reverse proxy or load balancer.
+
+---
+
+## Documentation Architecture
+
+Complete architectural guides and deep dives are available in the [`docs/`](docs/) directory:
+
+- [**Introduction & Design Goals**](docs/introduction.md) &mdash; Design philosophy, problem context, and architecture.
+- [**Getting Started Guide**](docs/getting-started.md) &mdash; Detailed installation and framework setup.
+- [**Configuration Reference**](docs/configuration.md) &mdash; Full options catalog and usage examples.
+- [**Application Logging**](docs/application-logging.md) &mdash; Console interception, framework support, and ring buffers.
+- [**API Observability**](docs/api-observability.md) &mdash; Request/response interception, circular safety, and exclusions.
+- [**Health & Diagnostics**](docs/health-monitoring.md) &mdash; Dual-tier health probes and system metrics.
+- [**Security & Privacy**](docs/security.md) &mdash; Threat models, remediations, and production checklists.
+- [**Production Deployment**](docs/deployment.md) &mdash; Docker, Kubernetes, Nginx, and multi-instance clusters.
+- [**Troubleshooting Guide**](docs/troubleshooting.md) &mdash; Solutions to common operational edge cases.
+- [**Architecture Deep Dive**](docs/architecture.md) &mdash; Internal component topology and memory lifecycles.
+- [**Production Debugging Playbook**](docs/production-debugging.md) &mdash; Step-by-step incident response playbook.
+
+---
+
+## Contributing & Community
+
+TracerNest is open-source software built for backend engineering teams. We welcome contributions, bug reports, and feedback!
+
+- [**Contributing Guide**](CONTRIBUTING.md) &mdash; Development setup, zero-dependency policy, and PR submission rules.
+- [**Code of Conduct**](CODE_OF_CONDUCT.md) &mdash; Contributor Covenant v2.1 standards.
+- [**Security Policy**](SECURITY.md) &mdash; Vulnerability reporting and security architecture.
+- [**Changelog**](CHANGELOG.md) &mdash; Version release history and migration notes.
 
 ---
 
 ## License
 
-This project is licensed under the [Apache License, Version 2.0](LICENSE) &mdash; free for use in commercial applications, open-source projects, and enterprise infrastructure.
+TracerNest is licensed under the [Apache License, Version 2.0](LICENSE). Free for use in commercial applications, open-source projects, and enterprise infrastructure.
