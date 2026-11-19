@@ -12,6 +12,8 @@ export interface HttpLogMetadata {
   headers?: Record<string, string>;
   requestBody?: any;
   responseBody?: any;
+  encrypted?: boolean;
+  decrypted?: boolean;
 }
 
 export interface LogEntry {
@@ -254,6 +256,18 @@ export interface TracerNestLoggerConfig {
    * Alias for secret: user-defined master key for encrypting SQL data at rest.
    */
   masterKey?: string;
+
+  /**
+   * Primary encryption key used for AES-256-GCM encryption of intercepted HTTP request
+   * and response payloads, SQL data at rest, and HMAC tokens.
+   */
+  encryptionKey?: string;
+
+  /**
+   * Explicitly enable or disable AES-256-GCM encryption for captured HTTP request and response payloads.
+   * Defaults to `true` whenever an `encryptionKey`, `masterKey`, or `secret` is provided in initialization parameters.
+   */
+  encryptPayloads?: boolean;
 
   /**
    * Dedicated folder directory where SQLite database, journal, and SQL export files are initialized.

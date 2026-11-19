@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.7.2] - 2026-11-18
+## [1.7.4] - 2026-11-19
+
+### Added
+- **SQLite WAL Concurrency Mode:** Configured `PRAGMA journal_mode = WAL;`, `PRAGMA busy_timeout = 5000;`, and `PRAGMA synchronous = NORMAL;` in SQLite storage to prevent database locked errors under multi-process or clustered container environments (PM2, Docker, Kubernetes).
+- **Reverse Proxy Host Header Tolerance:** Added sanitization for comma-separated or chained `Host` headers and resilient URL fallback extraction, eliminating `TypeError: Invalid URL` crashes behind cloud load balancers (AWS ALB, Nginx, Traefik).
+- **Cascading Header Guard:** Hardened `sendJson` against `res.headersSent` and `res.writableEnded` to prevent unhandled `ERR_HTTP_HEADERS_SENT` errors in complex Express middleware pipelines.
+- **Enriched Setup Diagnostics:** Added explicit server-side error logging for admin initialization and updated the dashboard setup dialog to surface specific root-cause details directly in the UI.
+
+## [1.7.2] - 2026-11-19
+
+### Added
+- **End-to-End HTTP Payload Encryption:** Added support for initialization parameter `encryptionKey` (and `encryptPayloads`). Automatically encrypts all intercepted `requestBody` and `responseBody` payloads using hardware-accelerated AES-256-GCM before storage or streaming.
+- **On-Demand Decryption API & UI:** Added `POST /api/logs/decrypt` and `?decrypt=true` query parameter for RBAC-authenticated operators (`logs:read`). Integrated inline one-click `[🔓 Decrypt]` buttons and encryption badges in the dashboard drawer and inspector modals.
 
 ### Documentation
 - **Quick Start at Top:** Added a 3-line quick start snippet directly below the hero section for instant onboarding.

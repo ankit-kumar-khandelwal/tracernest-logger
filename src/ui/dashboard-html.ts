@@ -2553,15 +2553,21 @@ ${brandTitleHtml}
           <div class="http-inspector-grid" style="padding:0;">
             <div class="payload-card">
               <div class="payload-title-bar">
-                <span style="display:inline-flex; align-items:center; gap:5px;"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="M6 11l6 6 6-6"/><path d="M19 21H5"/></svg><span>Request Payload (JSON)</span></span>
-                <button class="btn btn-sm" id="btnCopyReqPayload" onclick="copyModalReq()">Copy</button>
+                <span style="display:inline-flex; align-items:center; gap:5px;"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="M6 11l6 6 6-6"/><path d="M19 21H5"/></svg><span>Request Payload (JSON)</span><span id="lmReqEncBadge" class="badge" style="display:none; background:rgba(99,102,241,0.18); color:#a5b4fc; font-size:0.65rem; padding:1px 6px; border-radius:4px; border:1px solid rgba(99,102,241,0.3);">🔒 AES-256-GCM Encrypted</span></span>
+                <div style="display:flex; gap:4px;">
+                  <button class="btn btn-sm" id="btnDecryptModalReq" style="display:none; color:#818cf8; border-color:rgba(129,140,248,0.3);" onclick="decryptPayloadInModal('req')">🔓 Decrypt</button>
+                  <button class="btn btn-sm" id="btnCopyReqPayload" onclick="copyModalReq()">Copy</button>
+                </div>
               </div>
               <pre id="lmReqPayload" class="json-code" style="max-height:220px;"></pre>
             </div>
             <div class="payload-card">
               <div class="payload-title-bar">
-                <span style="display:inline-flex; align-items:center; gap:5px;"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 3v14"/><path d="M18 9l-6-6-6 6"/><path d="M5 21h14"/></svg><span>Response Payload (JSON)</span></span>
-                <button class="btn btn-sm" id="btnCopyResPayload" onclick="copyModalRes()">Copy</button>
+                <span style="display:inline-flex; align-items:center; gap:5px;"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 3v14"/><path d="M18 9l-6-6-6 6"/><path d="M5 21h14"/></svg><span>Response Payload (JSON)</span><span id="lmResEncBadge" class="badge" style="display:none; background:rgba(99,102,241,0.18); color:#a5b4fc; font-size:0.65rem; padding:1px 6px; border-radius:4px; border:1px solid rgba(99,102,241,0.3);">🔒 AES-256-GCM Encrypted</span></span>
+                <div style="display:flex; gap:4px;">
+                  <button class="btn btn-sm" id="btnDecryptModalRes" style="display:none; color:#818cf8; border-color:rgba(129,140,248,0.3);" onclick="decryptPayloadInModal('res')">🔓 Decrypt</button>
+                  <button class="btn btn-sm" id="btnCopyResPayload" onclick="copyModalRes()">Copy</button>
+                </div>
               </div>
               <pre id="lmResPayload" class="json-code" style="max-height:220px;"></pre>
             </div>
@@ -3255,6 +3261,29 @@ ${brandTitleHtml}
         httpSec.style.display = 'flex';
         const reqEl = document.getElementById('lmReqPayload');
         const resEl = document.getElementById('lmResPayload');
+        const reqEncBadge = document.getElementById('lmReqEncBadge');
+        const resEncBadge = document.getElementById('lmResEncBadge');
+        const btnDecReq = document.getElementById('btnDecryptModalReq');
+        const btnDecRes = document.getElementById('btnDecryptModalRes');
+
+        const isReqEnc = http.requestBody && (http.requestBody.encrypted || http.requestBody.__encrypted);
+        const isResEnc = http.responseBody && (http.responseBody.encrypted || http.responseBody.__encrypted);
+
+        if (reqEncBadge) reqEncBadge.style.display = isReqEnc ? 'inline-flex' : 'none';
+        if (resEncBadge) resEncBadge.style.display = isResEnc ? 'inline-flex' : 'none';
+        if (btnDecReq) {
+          btnDecReq.style.display = isReqEnc ? 'inline-flex' : 'none';
+          btnDecReq.textContent = '🔓 Decrypt';
+          btnDecReq.disabled = false;
+          btnDecReq.style.color = '#818cf8';
+        }
+        if (btnDecRes) {
+          btnDecRes.style.display = isResEnc ? 'inline-flex' : 'none';
+          btnDecRes.textContent = '🔓 Decrypt';
+          btnDecRes.disabled = false;
+          btnDecRes.style.color = '#818cf8';
+        }
+
         reqEl.textContent = http.requestBody !== undefined ? JSON.stringify(http.requestBody, null, 2) : '(No Request Body)';
         resEl.textContent = http.responseBody !== undefined ? JSON.stringify(http.responseBody, null, 2) : '(No Response Body)';
       } else {
@@ -3372,6 +3401,80 @@ ${brandTitleHtml}
       if (!currentModalEntry) return;
       navigator.clipboard.writeText(JSON.stringify(currentModalEntry, null, 2));
       showToast('Raw log JSON copied');
+    }
+
+    async function decryptPayloadInModal(type) {
+      if (!currentModalEntry?.metadata?.http) return;
+      const http = currentModalEntry.metadata.http;
+      const targetPayload = type === 'req' ? http.requestBody : http.responseBody;
+      if (!targetPayload) return;
+
+      const el = type === 'req' ? document.getElementById('lmReqPayload') : document.getElementById('lmResPayload');
+      const btn = type === 'req' ? document.getElementById('btnDecryptModalReq') : document.getElementById('btnDecryptModalRes');
+      if (btn) btn.textContent = 'Decrypting...';
+
+      try {
+        const res = await fetch(BASE_PATH + '/api/logs/decrypt', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ payload: targetPayload })
+        });
+        const data = await res.json();
+        if (data.success) {
+          if (type === 'req') http.requestBody = data.decrypted;
+          else http.responseBody = data.decrypted;
+          if (el) el.textContent = typeof data.decrypted === 'string' ? data.decrypted : JSON.stringify(data.decrypted, null, 2);
+          if (btn) {
+            btn.textContent = '🔓 Decrypted';
+            btn.style.color = '#34d399';
+            btn.disabled = true;
+          }
+          showToast('Payload decrypted successfully');
+        } else {
+          showToast(data.error || 'Decryption failed', true);
+          if (btn) btn.textContent = '🔓 Decrypt';
+        }
+      } catch (err) {
+        showToast('Decryption error: ' + err.message, true);
+        if (btn) btn.textContent = '🔓 Decrypt';
+      }
+    }
+
+    async function decryptPayloadInCard(logId, type, btnEl) {
+      const log = allLogs.find(l => l.id === logId);
+      if (!log?.metadata?.http) return;
+      const http = log.metadata.http;
+      const targetPayload = type === 'req' ? http.requestBody : http.responseBody;
+      if (!targetPayload) return;
+
+      const preEl = document.getElementById(logId + '_card_' + type);
+      if (btnEl) btnEl.textContent = '...';
+
+      try {
+        const res = await fetch(BASE_PATH + '/api/logs/decrypt', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ payload: targetPayload })
+        });
+        const data = await res.json();
+        if (data.success) {
+          if (type === 'req') http.requestBody = data.decrypted;
+          else http.responseBody = data.decrypted;
+          if (preEl) preEl.textContent = typeof data.decrypted === 'string' ? data.decrypted : JSON.stringify(data.decrypted, null, 2);
+          if (btnEl) {
+            btnEl.textContent = '🔓 Decrypted';
+            btnEl.style.color = '#34d399';
+            btnEl.disabled = true;
+          }
+          showToast('Payload decrypted');
+        } else {
+          showToast(data.error || 'Decryption failed', true);
+          if (btnEl) btnEl.textContent = 'Decrypt';
+        }
+      } catch (err) {
+        showToast('Decryption error: ' + err.message, true);
+        if (btnEl) btnEl.textContent = 'Decrypt';
+      }
     }
 
     function toggleLogDetails(id) {
@@ -3619,7 +3722,9 @@ ${brandTitleHtml}
         row.className = 'api-row-item';
 
         const hasReq = h.requestBody !== undefined && h.requestBody !== null;
+        const isReqEnc = hasReq && (h.requestBody.encrypted || h.requestBody.__encrypted);
         const hasRes = h.responseBody !== undefined && h.responseBody !== null;
+        const isResEnc = hasRes && (h.responseBody.encrypted || h.responseBody.__encrypted);
 
         const highlightedUrl = highlightSearch(h.url || e.message, s);
         const highlightedIp = highlightSearch(clientIp, s);
@@ -3642,22 +3747,28 @@ ${brandTitleHtml}
                 '<div class="payload-title-bar">' +
                   '<span style="color:#38bdf8; display:flex; align-items:center; gap:0.35rem;">' +
                     '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="M6 11l6 6 6-6"/><path d="M19 21H5"/></svg> Request Payload (' + escapeHtml(clientIp) + ')' +
-                  '</span>';
+                    (isReqEnc ? ' <span class="badge" style="background:rgba(99,102,241,0.18); color:#a5b4fc; font-size:0.62rem; padding:1px 5px; border-radius:3px; border:1px solid rgba(99,102,241,0.3);">🔒 Encrypted</span>' : '') +
+                  '</span>' +
+                  '<div style="display:flex; gap:4px;">' +
+                    (isReqEnc ? '<button class="btn" style="padding:1px 6px; font-size:0.65rem; color:#818cf8; border-color:rgba(129,140,248,0.3);" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + e.id + '" data-type="req">🔓 Decrypt</button>' : '');
         if (hasReq) {
           rowInner += '<button class="btn" style="padding:1px 6px; font-size:0.65rem;" onclick="copyPayload(this.dataset.target)" data-target="' + e.id + '_card_req">Copy JSON</button>';
         }
-        rowInner += '</div>' +
+        rowInner += '</div></div>' +
           '<pre id="' + e.id + '_card_req" class="json-code">' + (hasReq ? highlightSearch(JSON.stringify(h.requestBody, null, 2), s) : '<span style="color:#64748b; font-style:italic;">(No Request Body)</span>') + '</pre>' +
         '</div>' +
         '<div class="payload-card">' +
           '<div class="payload-title-bar">' +
             '<span style="color:#10b981; display:flex; align-items:center; gap:0.35rem;">' +
               '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 3v14"/><path d="M18 9l-6-6-6 6"/><path d="M5 21h14"/></svg> Response Payload (' + statusCode + ')' +
-            '</span>';
+              (isResEnc ? ' <span class="badge" style="background:rgba(99,102,241,0.18); color:#a5b4fc; font-size:0.62rem; padding:1px 5px; border-radius:3px; border:1px solid rgba(99,102,241,0.3);">🔒 Encrypted</span>' : '') +
+            '</span>' +
+            '<div style="display:flex; gap:4px;">' +
+              (isResEnc ? '<button class="btn" style="padding:1px 6px; font-size:0.65rem; color:#818cf8; border-color:rgba(129,140,248,0.3);" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + e.id + '" data-type="res">🔓 Decrypt</button>' : '');
         if (hasRes) {
           rowInner += '<button class="btn" style="padding:1px 6px; font-size:0.65rem;" onclick="copyPayload(this.dataset.target)" data-target="' + e.id + '_card_res">Copy JSON</button>';
         }
-        rowInner += '</div>' +
+        rowInner += '</div></div>' +
           '<pre id="' + e.id + '_card_res" class="json-code">' + (hasRes ? highlightSearch(JSON.stringify(h.responseBody, null, 2), s) : '<span style="color:#64748b; font-style:italic;">(No Response Body)</span>') + '</pre>' +
         '</div>' +
         '</div>' +
@@ -4744,7 +4855,7 @@ ${brandTitleHtml}
           startSSEStream();
           startStatsPolling();
         } else {
-          const msg = data.error || 'Failed to initialize account';
+          const msg = (data.error && data.details) ? (data.error + ': ' + data.details) : (data.error || 'Failed to initialize account');
           if (errBox) {
             errBox.textContent = msg;
             errBox.style.display = 'block';

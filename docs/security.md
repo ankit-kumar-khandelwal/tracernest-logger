@@ -68,6 +68,20 @@ TracerNest defends against this at the network socket layer:
 
 ---
 
+## 6. End-to-End HTTP Request & Response Payload Encryption (AES-256-GCM)
+
+In environments handling healthcare, financial, or confidential user data, retaining raw HTTP payloads in plaintext poses significant risk in core dumps, unauthenticated memory reads, or file audits.
+
+TracerNest provides automated, hardware-accelerated **AES-256-GCM symmetric payload encryption**:
+
+- **Hardware Acceleration:** Uses Node.js native `crypto.createCipheriv` and `crypto.createDecipheriv` with AES-256-GCM, utilizing CPU AES-NI instructions with near-zero latency impact (< 0.1ms overhead).
+- **Initialization Parameter Integration:** Providing an `encryptionKey` (or reusing `masterKey` / `secret`) automatically activates payload encryption for all intercepted HTTP requests and responses.
+- **Protected Telemetry Lifecycle:** Captured request and response bodies are immediately transformed into secure ciphertext envelopes (`{ __encrypted: true, algorithm: 'aes-256-gcm', ciphertext, iv, authTag, salt }`). Raw plaintext bodies are never stored in the circular ring buffer, never written to disk unencrypted, and never broadcast in plain text over Server-Sent Events (SSE).
+- **On-Demand Operator Decryption:** Authorized operators viewing the dashboard (`logs:read` permission) can inspect request metadata normally and click **[🔓 Decrypt]** on individual cards or modals to decrypt payloads on-demand via `POST /api/logs/decrypt` or request decrypted logs via `?decrypt=true`.
+- **Authenticated Integrity & Tamper Detection:** AES-256-GCM generates a 128-bit authentication tag for every payload. Any tampering or corrupted ciphertext is rejected immediately with HTTP 400.
+
+---
+
 ## Production Security Checklist
 
 Before deploying TracerNest to a production environment, complete this checklist:

@@ -70,6 +70,29 @@ TracerNest Logger is engineered with strict operational constraints:
 6. **Timing Attack Protection:**  
    Authentication hashes and stateless session tokens are verified using `crypto.timingSafeEqual` to eliminate timing side-channel attacks.
 
+7. **Supply Chain Security & Socket.dev Verification:**  
+   TracerNest Logger is designed to pass strict supply-chain and capability security audits (e.g., [Socket.dev](https://socket.dev/npm/package/tracernest-logger)):
+   - **Zero Transitive Dependencies:** `dependencies: {}` ensures zero attack vectors from nested supply-chain packages.
+   - **Zero Eval / Dynamic Code Execution:** Zero instances of `eval()`, `new Function()`, or dynamic code evaluation in production code.
+   - **Zero Telemetry / No Phone-Home:** Telemetry never leaves the host application.
+   - **Declared Architectural Capabilities:**
+     - `networkAccess`: Required for passive HTTP request/response interception (`node:http`), serving the local `/tracernest` router, and sending user-configured alerts (webhook/SMTP).
+     - `fsAccess`: Required for encrypted SQLite database and WAL lock files.
+     - `envVars`: Required for reading configuration variables (`TRACERNEST_MASTER_KEY`, `PORT`, `NODE_ENV`).
+
+### Socket.dev Integration for Downstream Projects
+
+If your organization enforces security gating using `socket.yml`, declare TracerNest's expected observability capabilities:
+
+```yaml
+# socket.yml
+project:
+  ignore:
+    - package: "tracernest-logger"
+      issue: "networkAccess"
+      reason: "Self-hosted HTTP observability dashboard requiring local HTTP interception and dashboard routing."
+```
+
 ---
 
 ## Security Advisories & CVEs

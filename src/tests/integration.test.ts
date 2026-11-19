@@ -1884,5 +1884,178 @@ test('Integration: Security Review Remediations (SEC-09, SEC-10) - Request Body 
   }
 });
 
+test('Integration: Request & Response Payload AES-256-GCM Encryption with Initialization Key', async () => {
+  const testDataDir = './test_data_encryption_' + Date.now();
+  const encryptionKey = 'super-secret-vault-encryption-key-32b!';
+
+  const tracer = new TracerNestLogger({
+    path: '/tracernest',
+    dataDir: testDataDir,
+    encryptionKey: encryptionKey,
+    interceptHttp: true
+  });
+
+  try {
+    // 1. Initial admin user registration
+    const mockSetup = createMockReqRes({
+      method: 'POST',
+      url: '/tracernest/api/auth/setup',
+      headers: { 'content-type': 'application/json' },
+      body: { username: 'encadmin', password: 'MasterPassword123!', role: 'admin' }
+    });
+    await tracer.handleRequest(mockSetup.req, mockSetup.res);
+    const setupResult = mockSetup.getResponse();
+    assert.strictEqual(setupResult.statusCode, 201, 'Admin registration must succeed');
+    const token = setupResult.json().token;
+    assert.ok(token, 'Must return auth token');
+
+    // 2. Simulate intercepted HTTP API transaction
+    const interceptedReq = createMockReqRes({
+      method: 'POST',
+      url: '/api/v1/confidential-records',
+      headers: { 'content-type': 'application/json' },
+      body: {
+        recordId: 'REC-9941',
+        ssnOrTaxId: '000-12-3456',
+        patientHealthData: 'classified-medical-history',
+        notes: 'Top Secret Payload'
+      }
+    });
+
+    const interceptedMw = tracer.middleware();
+    await new Promise<void>((resolve) => {
+      interceptedMw(interceptedReq.req, interceptedReq.res, () => {
+        interceptedReq.res.writeHead(201, { 'content-type': 'application/json' });
+        interceptedReq.res.write(JSON.stringify({
+          status: 'success',
+          createdRecordId: 'REC-9941',
+          transactionMessage: 'Confidential transaction approved by auditor',
+          internalBatchCode: 'batch_classified_abc123'
+        }));
+        interceptedReq.res.end();
+        resolve();
+      });
+    });
+
+    // Allow async persistence & buffer capture
+    await new Promise((r) => setTimeout(r, 100));
+
+    // 3. Query logs via raw API without decrypt flag
+    const mockLogsReq = createMockReqRes({
+      method: 'GET',
+      url: '/tracernest/api/logs',
+      headers: { authorization: `Bearer ${token}` }
+    });
+    await tracer.handleRequest(mockLogsReq.req, mockLogsReq.res);
+    const logsResult = mockLogsReq.getResponse();
+    assert.strictEqual(logsResult.statusCode, 200, 'GET /api/logs must succeed');
+
+    const rawLogs = logsResult.json().logs;
+    const apiLog = rawLogs.find((l: any) => l.metadata?.http?.url === '/api/v1/confidential-records');
+    assert.ok(apiLog, 'Must find confidential-records log entry');
+    assert.strictEqual(apiLog.metadata.http.encrypted, true, 'Metadata must denote encrypted: true');
+
+    // Verify requestBody is encrypted:
+    const reqBody = apiLog.metadata.http.requestBody;
+    assert.ok(reqBody, 'requestBody must be present');
+    assert.strictEqual(reqBody.encrypted, true, 'requestBody object must have encrypted: true');
+    assert.strictEqual(reqBody.algorithm, 'aes-256-gcm', 'requestBody must declare aes-256-gcm');
+    assert.ok(reqBody.ciphertext, 'requestBody must have ciphertext');
+    assert.ok(reqBody.iv, 'requestBody must have iv');
+    assert.ok(reqBody.authTag, 'requestBody must have authTag');
+
+    // Verify raw body string representation does NOT leak plaintext
+    const stringified = JSON.stringify(apiLog);
+    assert.ok(!stringified.includes('Top Secret Payload'), 'Plaintext request payload must NEVER appear in un-decrypted logs');
+    assert.ok(!stringified.includes('batch_classified_abc123'), 'Plaintext response payload must NEVER appear in un-decrypted logs');
+
+    // Verify responseBody is encrypted:
+    const resBody = apiLog.metadata.http.responseBody;
+    assert.ok(resBody, 'responseBody must be present');
+    assert.strictEqual(resBody.encrypted, true, 'responseBody object must have encrypted: true');
+    assert.ok(resBody.ciphertext, 'responseBody must have ciphertext');
+
+    // 4. Test On-Demand Decryption endpoint: POST /api/logs/decrypt
+    const mockDecryptReq = createMockReqRes({
+      method: 'POST',
+      url: '/tracernest/api/logs/decrypt',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`
+      },
+      body: { payload: reqBody }
+    });
+    await tracer.handleRequest(mockDecryptReq.req, mockDecryptReq.res);
+    const decryptResult = mockDecryptReq.getResponse();
+    assert.strictEqual(decryptResult.statusCode, 200, 'POST /api/logs/decrypt must succeed');
+    const decryptedJson = decryptResult.json();
+    assert.strictEqual(decryptedJson.success, true);
+    assert.strictEqual(decryptedJson.decrypted.notes, 'Top Secret Payload', 'Must decrypt request payload back to original JSON');
+    assert.strictEqual(decryptedJson.decrypted.recordId, 'REC-9941');
+
+    // 5. Test Decryption of response body
+    const mockDecryptRes = createMockReqRes({
+      method: 'POST',
+      url: '/tracernest/api/logs/decrypt',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`
+      },
+      body: { payload: resBody }
+    });
+    await tracer.handleRequest(mockDecryptRes.req, mockDecryptRes.res);
+    const decryptedResResult = mockDecryptRes.getResponse();
+    assert.strictEqual(decryptedResResult.statusCode, 200);
+    assert.strictEqual(decryptedResResult.json().decrypted.internalBatchCode, 'batch_classified_abc123');
+    assert.strictEqual(decryptedResResult.json().decrypted.transactionMessage, 'Confidential transaction approved by auditor');
+
+    // 6. Test Tampered Ciphertext handling
+    const tamperedPayload = { ...reqBody, ciphertext: 'bad' + reqBody.ciphertext.slice(3) };
+    const mockTamperReq = createMockReqRes({
+      method: 'POST',
+      url: '/tracernest/api/logs/decrypt',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`
+      },
+      body: { payload: tamperedPayload }
+    });
+    await tracer.handleRequest(mockTamperReq.req, mockTamperReq.res);
+    const tamperResult = mockTamperReq.getResponse();
+    assert.strictEqual(tamperResult.statusCode, 400, 'Tampered ciphertext must fail decryption with HTTP 400');
+    assert.strictEqual(tamperResult.json().success, false);
+
+    // 7. Test GET /api/logs with ?decrypt=true
+    const mockLogsDecryptedReq = createMockReqRes({
+      method: 'GET',
+      url: '/tracernest/api/logs?decrypt=true',
+      headers: { authorization: `Bearer ${token}` }
+    });
+    await tracer.handleRequest(mockLogsDecryptedReq.req, mockLogsDecryptedReq.res);
+    const logsDecryptedResult = mockLogsDecryptedReq.getResponse();
+    assert.strictEqual(logsDecryptedResult.statusCode, 200);
+    const decryptedLogs = logsDecryptedResult.json().logs;
+    const decryptedApiLog = decryptedLogs.find((l: any) => l.metadata?.http?.url === '/api/v1/confidential-records');
+    assert.ok(decryptedApiLog);
+    assert.strictEqual(decryptedApiLog.metadata.http.requestBody.notes, 'Top Secret Payload', 'GET /api/logs?decrypt=true must return decrypted request body');
+    assert.strictEqual(decryptedApiLog.metadata.http.responseBody.internalBatchCode, 'batch_classified_abc123', 'GET /api/logs?decrypt=true must return decrypted response body');
+
+    // 8. Test Export with ?decrypt=true
+    const mockExportReq = createMockReqRes({
+      method: 'GET',
+      url: '/tracernest/api/logs/export?format=json&decrypt=true',
+      headers: { authorization: `Bearer ${token}` }
+    });
+    await tracer.handleRequest(mockExportReq.req, mockExportReq.res);
+    const exportResult = mockExportReq.getResponse();
+    assert.strictEqual(exportResult.statusCode, 200);
+    assert.ok(exportResult.body.includes('Top Secret Payload'), 'Export with decrypt=true must include decrypted content');
+
+  } finally {
+    tracer.stop();
+    if (existsSync(testDataDir)) rmSync(testDataDir, { recursive: true, force: true });
+  }
+});
+
 
 

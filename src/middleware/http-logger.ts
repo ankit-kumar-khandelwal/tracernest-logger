@@ -2,6 +2,7 @@ import { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { LogEntry, LogLevel, HttpLogMetadata, RouteFilterRule, ExcludedRouteRule, TrustProxyOption } from '../types';
 import { Sanitizer } from '../security/sanitizer';
+import { FastCrypto } from '../security/fast-crypto';
 import { RingBuffer } from '../core/ring-buffer';
 import { StreamManager } from '../core/stream-manager';
 import { TTLManager } from '../core/ttl-manager';
@@ -21,6 +22,8 @@ export class HttpLogger {
   private dynamicExcludedRules: ExcludedRouteRule[] = [];
   private customPatterns?: RegExp[];
   private trustProxy?: TrustProxyOption;
+  private encryptionKey?: string;
+  private encryptPayloads: boolean;
 
   constructor(options: {
     ringBuffer: RingBuffer;
@@ -34,6 +37,8 @@ export class HttpLogger {
     sensitiveFieldKeys?: string[];
     excludeRoutes?: RouteFilterRule[];
     customPatterns?: RegExp[];
+    encryptionKey?: string;
+    encryptPayloads?: boolean;
   }) {
     this.ringBuffer = options.ringBuffer;
     this.streamManager = options.streamManager;
@@ -44,6 +49,8 @@ export class HttpLogger {
     this.maxBodyBytes = options.maxBodyBytes ?? 512 * 1024; // 512 KB
     this.excludeRoutes = options.excludeRoutes || [];
     this.customPatterns = options.customPatterns;
+    this.encryptionKey = options.encryptionKey;
+    this.encryptPayloads = options.encryptPayloads ?? false;
 
     const defaultSensitiveHeaders = [
       'authorization',
@@ -99,6 +106,37 @@ export class HttpLogger {
 
   public getDynamicExcludedRoutes(): ExcludedRouteRule[] {
     return this.dynamicExcludedRules;
+  }
+
+  /**
+   * Encrypts an HTTP request or response payload with AES-256-GCM using the initialization key
+   */
+  public encryptPayload(data: any): any {
+    if (!this.encryptionKey) return data;
+    try {
+      const plaintext = typeof data === 'string' ? data : JSON.stringify(data);
+      const enc = FastCrypto.encrypt(plaintext, this.encryptionKey);
+      return {
+        __encrypted: true,
+        encrypted: true,
+        algorithm: 'aes-256-gcm',
+        ciphertext: enc.ciphertext,
+        iv: enc.iv,
+        authTag: enc.authTag,
+        salt: enc.salt
+      };
+    } catch {
+      return data;
+    }
+  }
+
+  /**
+   * Decrypts an encrypted payload with AES-256-GCM using the initialization key
+   */
+  public decryptPayload(payload: any, keyOverride?: string): any {
+    const key = keyOverride || this.encryptionKey;
+    if (!key) return payload;
+    return FastCrypto.decryptPayload(payload, key);
   }
 
   public middleware(): (req: IncomingMessage, res: ServerResponse, next: (err?: any) => void) => void {
@@ -256,6 +294,22 @@ export class HttpLogger {
 
         const safeUrl = this.sanitizeUrl(url);
 
+        let finalReqBody = parsedReqBody;
+        if (this.encryptPayloads && this.encryptionKey && parsedReqBody !== undefined && parsedReqBody !== null) {
+          finalReqBody = this.encryptPayload(parsedReqBody);
+        }
+
+        let finalResBody = parsedResBody;
+        if (this.encryptPayloads && this.encryptionKey && parsedResBody !== undefined && parsedResBody !== null) {
+          finalResBody = this.encryptPayload(parsedResBody);
+        }
+
+        const isEncrypted = Boolean(
+          this.encryptPayloads &&
+          this.encryptionKey &&
+          ((finalReqBody && finalReqBody.encrypted) || (finalResBody && finalResBody.encrypted))
+        );
+
         const httpMeta: HttpLogMetadata = {
           method,
           url: safeUrl,
@@ -264,8 +318,9 @@ export class HttpLogger {
           durationMs,
           clientIp,
           headers: safeHeaders,
-          requestBody: parsedReqBody,
-          responseBody: parsedResBody
+          requestBody: finalReqBody,
+          responseBody: finalResBody,
+          encrypted: isEncrypted
         };
 
         const message = `HTTP [${method}] ${safeUrl} - ${statusCode} (${durationMs}ms)`;
