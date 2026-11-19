@@ -28,6 +28,8 @@ const tracer = new TracerNestLogger(config);
 | **`sqlFilePath`** | `string` | `'./.tracernest/tracernest-logger.sql'` | Target file path for the auto-synchronized encrypted SQL mirror. |
 | **`sqliteFilePath`** | `string` | `'./.tracernest/tracernest-logger.sqlite'` | Path to the active SQLite database file. |
 | **`masterKey`** / **`secret`** | `string` | Auto-generated | 32+ character passphrase used for AES-256-GCM database encryption and HMAC tokens. |
+| **`encryptionKey`** | `string` | `undefined` | 32+ character passphrase used for AES-256-GCM encryption of all captured HTTP request & response payloads. Defaults to `masterKey`/`secret` if set. |
+| **`encryptPayloads`** | `boolean` | `true` if key present | Explicit flag to enable or disable HTTP request and response payload encryption. |
 | **`bufferSize`** | `number` | `5000` | In-memory circular ring buffer capacity. Maximum recommended: `100000`. |
 | **`dialect`** | `'sqlite' \| 'mysql'` | `'sqlite'` | Storage engine dialect. Defaults to embedded zero-config SQLite. |
 | **`mysql`** | `MySQLConnectionConfig` | `undefined` | Configuration options when using MySQL storage. |

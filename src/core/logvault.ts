@@ -53,7 +53,7 @@ export class TracerNestLogger {
     this.config = effectiveConfig;
 
     // 1. Initialize SQL Storage (SQLite + auto-synchronized encrypted SQL file, or MySQL)
-    const userEncryptionKey = effectiveConfig.secret || effectiveConfig.masterKey;
+    const userEncryptionKey = effectiveConfig.encryptionKey || effectiveConfig.secret || effectiveConfig.masterKey;
     this.sqlStore = new SqlStore({
       dataDir: effectiveConfig.dataDir,
       sqlFilePath: effectiveConfig.sqlFilePath,
@@ -65,6 +65,12 @@ export class TracerNestLogger {
     });
 
     this.secret = userEncryptionKey || this.sqlStore.getMasterKey();
+
+    // Determine payload encryption for shared request/response bodies:
+    // Automatically enabled whenever an encryptionKey, masterKey, or secret is taken in initialization parameters,
+    // or when explicitly configured via effectiveConfig.encryptPayloads.
+    const shouldEncryptPayloads = effectiveConfig.encryptPayloads ?? Boolean(userEncryptionKey);
+    const activeEncryptionKey = userEncryptionKey || this.secret;
 
     // 2. Initialize Security & Core Components
     this.rbac = new RBACManager(effectiveConfig.customRolePermissions);
@@ -98,7 +104,9 @@ export class TracerNestLogger {
       sensitiveHeaders: effectiveConfig.sensitiveHeaders,
       sensitiveFieldKeys: effectiveConfig.sensitiveFieldKeys,
       excludeRoutes: effectiveConfig.excludeRoutes || effectiveConfig.excludePaths || effectiveConfig.ignoreRoutes,
-      customPatterns: effectiveConfig.customRedactionPatterns
+      customPatterns: effectiveConfig.customRedactionPatterns,
+      encryptionKey: activeEncryptionKey,
+      encryptPayloads: shouldEncryptPayloads
     });
 
     // Load persisted UI-configured excluded routes

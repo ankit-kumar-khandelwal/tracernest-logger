@@ -15,6 +15,7 @@ import { AlertDispatcher } from '../alerts/alert-dispatcher';
 import { TTLManager } from '../core/ttl-manager';
 import { HttpLogger } from './http-logger';
 import { extractClientIp } from '../security/client-ip';
+import { FastCrypto } from '../security/fast-crypto';
 import { getDashboardHtml } from '../ui/dashboard-html';
 
 export class HttpHandler {
@@ -84,7 +85,8 @@ export class HttpHandler {
         this.handleRequest(req, res).then(handled => {
           if (!handled) next();
         }).catch(err => {
-          this.sendJson(res, 500, { error: 'Internal LogVault error', details: err?.message });
+          console.error('[TracerNest-Logger] Internal Handler Error:', err);
+          this.sendJson(res, 500, { error: 'Internal server error', details: err?.message || String(err) });
         });
       } else {
         next();
@@ -96,28 +98,43 @@ export class HttpHandler {
     const expressBaseUrl = (req as any).baseUrl || '';
     const originalUrl = (req as any).originalUrl || req.url || '/';
     const rawUrl = req.url || '/';
-    const host = req.headers.host || 'localhost';
+    const rawHost = (req.headers.host || 'localhost').split(',')[0].trim();
+    const host = rawHost || 'localhost';
 
     let subPath = '';
-    if (expressBaseUrl === this.basePath || expressBaseUrl.endsWith(this.basePath)) {
-      // Express router stripped basePath from req.url
-      const parsed = new URL(rawUrl, `http://${host}`);
-      subPath = parsed.pathname;
-    } else if (rawUrl === this.basePath || rawUrl.startsWith(this.basePath + '/') || rawUrl.startsWith(this.basePath + '?')) {
-      const parsed = new URL(rawUrl, `http://${host}`);
-      subPath = parsed.pathname.slice(this.basePath.length);
-    } else if (originalUrl === this.basePath || originalUrl.startsWith(this.basePath + '/') || originalUrl.startsWith(this.basePath + '?')) {
-      const parsed = new URL(originalUrl, `http://${host}`);
-      subPath = parsed.pathname.slice(this.basePath.length);
-    } else {
-      return false;
+    try {
+      if (expressBaseUrl === this.basePath || expressBaseUrl.endsWith(this.basePath)) {
+        // Express router stripped basePath from req.url
+        const parsed = new URL(rawUrl, `http://${host}`);
+        subPath = parsed.pathname;
+      } else if (rawUrl === this.basePath || rawUrl.startsWith(this.basePath + '/') || rawUrl.startsWith(this.basePath + '?')) {
+        const parsed = new URL(rawUrl, `http://${host}`);
+        subPath = parsed.pathname.slice(this.basePath.length);
+      } else if (originalUrl === this.basePath || originalUrl.startsWith(this.basePath + '/') || originalUrl.startsWith(this.basePath + '?')) {
+        const parsed = new URL(originalUrl, `http://${host}`);
+        subPath = parsed.pathname.slice(this.basePath.length);
+      } else {
+        return false;
+      }
+    } catch {
+      const cleanRaw = rawUrl.split('?')[0];
+      if (cleanRaw.startsWith(this.basePath)) {
+        subPath = cleanRaw.slice(this.basePath.length);
+      } else {
+        subPath = cleanRaw;
+      }
     }
 
     if (!subPath || !subPath.startsWith('/')) {
       subPath = '/' + (subPath || '');
     }
 
-    const parsedUrl = new URL(rawUrl, `http://${host}`);
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(rawUrl, `http://${host}`);
+    } catch {
+      parsedUrl = new URL('/', 'http://localhost');
+    }
     const method = (req.method || 'GET').toUpperCase();
 
     this.setSecurityHeaders(res);
@@ -149,7 +166,7 @@ export class HttpHandler {
     }
 
     // 3. First-Time Setup: Create Root Administrator
-    if (method === 'POST' && subPath === '/api/auth/setup') {
+    if (method === 'POST' && (subPath === '/api/auth/setup' || subPath === '/api/auth/setup/')) {
       if (this.userStore.hasUsers()) {
         this.sendJson(res, 400, { error: 'System is already initialized. Please sign in or use reset.' });
         return true;
@@ -197,7 +214,8 @@ export class HttpHandler {
           }
         });
       } catch (err: any) {
-        this.sendJson(res, 400, { error: err.message });
+        console.error('[TracerNest-Logger] Setup error creating admin user:', err?.message || err);
+        this.sendJson(res, 400, { error: err.message || 'Failed to create root administrator' });
       }
       return true;
     }
@@ -430,7 +448,28 @@ export class HttpHandler {
         sortBy
       });
 
+      if (parsedUrl.searchParams.get('decrypt') === 'true') {
+        result.logs = result.logs.map(l => this.decryptLogEntry(l));
+      }
+
       this.sendJson(res, 200, result);
+      return true;
+    }
+
+    // 6.1 On-Demand Payload Decryption Endpoint
+    if (method === 'POST' && (subPath === '/api/logs/decrypt' || subPath === '/api/logs/decrypt-payload')) {
+      if (!this.checkPermission(res, user.role, 'logs:read')) return true;
+      const body = await this.readJsonBody(req, res);
+      if (!body) return true;
+
+      const payload = body.payload || body;
+      const key = body.key || this.secret;
+      try {
+        const decrypted = FastCrypto.decryptPayload(payload, key);
+        this.sendJson(res, 200, { success: true, decrypted });
+      } catch (err: any) {
+        this.sendJson(res, 400, { success: false, error: err.message || 'Decryption failed' });
+      }
       return true;
     }
 
@@ -479,6 +518,9 @@ export class HttpHandler {
       const to = parsedUrl.searchParams.get('to') ? parseInt(parsedUrl.searchParams.get('to')!, 10) : undefined;
 
       const result = this.ringBuffer.query({ search, isRegex, level, source, from, to, limit: 10000 });
+      if (parsedUrl.searchParams.get('decrypt') === 'true') {
+        result.logs = result.logs.map(l => this.decryptLogEntry(l));
+      }
       const filename = `tracernest-export-${Date.now()}.${format}`;
 
       this.auditLogger.log({
@@ -1036,17 +1078,56 @@ export class HttpHandler {
     };
   }
 
+  private decryptLogEntry(entry: any): any {
+    if (!entry.metadata?.http) return entry;
+    const http = entry.metadata.http;
+    const key = this.secret;
+    if (!key) return entry;
+
+    let decryptedReq = http.requestBody;
+    if (http.requestBody && (http.requestBody.encrypted || http.requestBody.__encrypted)) {
+      try {
+        decryptedReq = FastCrypto.decryptPayload(http.requestBody, key);
+      } catch {}
+    }
+
+    let decryptedRes = http.responseBody;
+    if (http.responseBody && (http.responseBody.encrypted || http.responseBody.__encrypted)) {
+      try {
+        decryptedRes = FastCrypto.decryptPayload(http.responseBody, key);
+      } catch {}
+    }
+
+    return {
+      ...entry,
+      metadata: {
+        ...entry.metadata,
+        http: {
+          ...http,
+          requestBody: decryptedReq,
+          responseBody: decryptedRes,
+          decrypted: true
+        }
+      }
+    };
+  }
+
   private getClientIp(req: IncomingMessage): string {
     return extractClientIp(req, this.config.trustProxy);
   }
 
   private sendJson(res: ServerResponse, statusCode: number, data: any): void {
-    const payload = JSON.stringify(data);
-    res.writeHead(statusCode, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Content-Length': Buffer.byteLength(payload)
-    });
-    res.end(payload);
+    if (res.headersSent || (res as any).writableEnded) return;
+    try {
+      const payload = JSON.stringify(data);
+      res.writeHead(statusCode, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': Buffer.byteLength(payload)
+      });
+      res.end(payload);
+    } catch (err: any) {
+      console.error('[TracerNest-Logger] sendJson failure:', err?.message || err);
+    }
   }
 
   /**

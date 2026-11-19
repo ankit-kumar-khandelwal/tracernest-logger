@@ -113,16 +113,31 @@ export class SqlStore {
     // Ensure parent directories exist
     const sqliteDir = dirname(this.sqliteFilePath);
     if (sqliteDir && sqliteDir !== '.' && !existsSync(sqliteDir)) {
-      mkdirSync(sqliteDir, { recursive: true });
+      try {
+        mkdirSync(sqliteDir, { recursive: true });
+      } catch (err: any) {
+        console.error(`[TracerNest-Logger] ERROR: Cannot create data directory '${sqliteDir}':`, err?.message || err);
+        console.error('[TracerNest-Logger] TIP: In Docker, ensure the directory has write permissions (e.g. `chown -R node:node /app/.tracernest`) or set `dataDir: "/tmp/.tracernest"`.');
+      }
     }
     const sqlDir = dirname(this.sqlFilePath);
     if (sqlDir && sqlDir !== '.' && !existsSync(sqlDir)) {
-      mkdirSync(sqlDir, { recursive: true });
+      try {
+        mkdirSync(sqlDir, { recursive: true });
+      } catch (err: any) {
+        console.error(`[TracerNest-Logger] ERROR: Cannot create SQL export directory '${sqlDir}':`, err?.message || err);
+      }
     }
 
     // Initialize Native SQLite (used directly or as ultra-fast local tier)
-    this.db = new NativeDatabaseSync(this.sqliteFilePath);
-    this.initTables();
+    try {
+      this.db = new NativeDatabaseSync(this.sqliteFilePath);
+      this.initTables();
+    } catch (err: any) {
+      console.error(`[TracerNest-Logger] ERROR: Failed to initialize SQLite storage at '${this.sqliteFilePath}':`, err?.message || err);
+      console.error('[TracerNest-Logger] TIP: In Docker containers, ensure the directory is writable by the process user (e.g. `chown -R node:node /app/.tracernest`) or set `dataDir: "/tmp/.tracernest"`.');
+      throw err;
+    }
 
     // If sqlFilePath exists on disk and sqlite is empty, restore data from sql file
     if (existsSync(this.sqlFilePath) && this.getUserCount() === 0) {
@@ -151,6 +166,15 @@ export class SqlStore {
   }
 
   private initTables(): void {
+    // 0. Enable WAL journal mode & busy timeout for concurrent read/write resilience in containers & clusters
+    try {
+      this.db.exec(`
+        PRAGMA journal_mode = WAL;
+        PRAGMA busy_timeout = 5000;
+        PRAGMA synchronous = NORMAL;
+      `);
+    } catch {}
+
     // 1. Initialize tables with configured tablePrefix (default: logg_vault_)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS ${this.tableMeta} (

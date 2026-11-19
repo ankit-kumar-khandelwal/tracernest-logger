@@ -1,0 +1,55 @@
+# ==============================================================================
+# Socket.dev Configuration - TracerNest Logger
+# Specification: Schema Version 2 (https://docs.socket.dev/docs/socket-yml)
+# ==============================================================================
+
+version: 2
+
+# Exclude build output, test suites, and docs from supply-chain capability checks
+projectIgnorePaths:
+  - "dist/tests/**"
+  - "artifacts/**"
+  - "docs/**"
+  - "assets/**"
+
+# ------------------------------------------------------------------------------
+# Architectural Capability Disclosures & Audit Whitelisting
+# ------------------------------------------------------------------------------
+# TracerNest Logger is a zero-dependency, self-hosted Node.js HTTP observability
+# and operations dashboard. The following capabilities are verified, intentional
+# architectural primitives required for core functionality:
+#
+# 1. networkAccess (Medium):
+#    - Intercepts incoming HTTP requests & responses via node:http
+#    - Serves the local /tracernest operational dashboard router
+#    - Dispatches alerts strictly when user explicitly configures Webhooks or SMTP
+#    - ZERO telemetry or external phone-home network calls.
+#
+# 2. fsAccess (Low/Info):
+#    - Stores encrypted telemetry logs and WAL journal in local SQLite / .tracernest
+#    - Manages isolated master.key with 0600 file permissions.
+#
+# 3. envVars (Low/Info):
+#    - Reads TRACERNEST_MASTER_KEY, NODE_ENV, and PORT for configuration.
+# ------------------------------------------------------------------------------
+issueRules:
+  # Suppress false positives on expected observability capabilities
+  networkAccess: false
+  network-access: false
+  fsAccess: false
+  file-system-access: false
+  envVars: false
+  environment-variable-access: false
+
+  # Strictly enforce zero toleration for supply-chain attack vectors:
+  dynamicCodeExecution: error
+  shellAccess: error
+  installScripts: error
+  unresolvedRequire: error
+  telemetry: error
+
+# GitHub App Integration
+githubApp:
+  enabled: true
+  dependencyOverviewEnabled: true
+  disableCommentsAndCheckRuns: false

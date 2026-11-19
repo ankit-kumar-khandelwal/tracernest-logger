@@ -115,4 +115,23 @@ export class FastCrypto {
       ciphertext: parts[3]
     };
   }
+
+  /**
+   * Decrypts an EncryptedPayload and parses it back to JSON if valid JSON, otherwise returns plaintext string
+   */
+  public static decryptPayload(payload: any, masterKey: string): any {
+    if (!payload) return payload;
+    if (typeof payload === 'string' && payload.includes('$') && payload.split('$').length === 4) {
+      payload = this.deserialize(payload);
+    }
+    if (!payload || typeof payload !== 'object' || !payload.ciphertext || !payload.iv || !payload.authTag || !payload.salt) {
+      return payload;
+    }
+    const decryptedStr = this.decrypt(payload as EncryptedPayload, masterKey);
+    try {
+      return JSON.parse(decryptedStr);
+    } catch {
+      return decryptedStr;
+    }
+  }
 }
