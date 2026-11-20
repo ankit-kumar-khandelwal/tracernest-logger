@@ -13,7 +13,6 @@
 [![npm version](https://img.shields.io/npm/v/tracernest-logger)](https://www.npmjs.com/package/tracernest-logger)
 [![npm downloads](https://img.shields.io/npm/dm/tracernest-logger)](https://www.npmjs.com/package/tracernest-logger)
 [![Socket Security](https://socket.dev/api/badge/npm/package/tracernest-logger)](https://socket.dev/npm/package/tracernest-logger)
-[![Socket Security](https://socket.dev/api/badge/npm/package/tracernest-logger)](https://socket.dev/npm/package/tracernest-logger)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-10B981.svg?style=flat-square)](LICENSE)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-10B981.svg?style=flat-square)](package.json)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-38BDF8.svg?style=flat-square)](package.json)
@@ -41,10 +40,14 @@ import { TracerNestLogger } from 'tracernest-logger';
 const app = express();
 const tracer = new TracerNestLogger({ path: '/tracernest' });
 
-// Mounts dashboard and telemetry interception on your existing HTTP app
+// 1. MUST BE FIRST: Mount TracerNest at the top of your middleware stack
+// (before CORS, body parsers, and application routes)
 app.use(tracer.middleware());
 
-// Your normal application routes
+// 2. Application middleware (CORS, body-parser, etc.)
+app.use(express.json());
+
+// 3. Application routes
 app.get('/api/users', (req, res) => res.json({ status: 'ok' }));
 
 app.listen(3000, () => {
@@ -77,7 +80,7 @@ app.listen(3000, () => {
   - [3. Native Node.js HTTP Server](#3-native-nodejs-http-server)
   - [4. Dedicated Standalone Port (Optional)](#4-dedicated-standalone-port-optional)
   - [5. Docker Container Deployment](#5-docker-container-deployment)
-  - [5. Docker Container Deployment](#5-docker-container-deployment)
+  - [6. MySQL Database & Connection Pool Integration](#6-mysql-database--connection-pool-integration)
 - [Configuration Reference](#configuration-reference)
 - [Security & Privacy](#security--privacy)
   - [Production Security Checklist](#production-security-checklist)
@@ -294,15 +297,21 @@ When a production-only bug occurs, TracerNest enables rapid triage:
 
 ### 1. Express.js
 
+#### Middleware Ordering Rule
+
+> [!IMPORTANT]
+> **Always register `app.use(tracer.middleware())` at the VERY TOP of your middleware pipeline:**
+> 1. **Mount BEFORE CORS:** If your `cors` middleware restricts origins (such as a domain whitelist), visiting the dashboard via your server's public or Elastic IP (`https://<elastic-ip>/api/tracernest`) will be rejected by CORS with `Origin not allowed`, causing Express to return a 500 Internal Server Error. Placing TracerNest before CORS avoids this conflict.
+> 2. **Mount BEFORE Application Routes:** Express runs middleware sequentially. To capture and log incoming HTTP request bodies, status codes, and latency, TracerNest must wrap the request *before* it reaches your route controllers.
+> 3. **Never Mount AFTER Error Handlers:** Placing TracerNest below `app.use((err, req, res, next) => ...)` prevents it from receiving requests whenever any error occurs in your application.
+
 ```typescript
 import express from 'express';
+import cors from 'cors';
 import { TracerNestLogger } from 'tracernest-logger';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Body parsers (optional, TracerNest captures bodies with or without them)
-app.use(express.json());
 
 // Initialize TracerNest
 const tracer = new TracerNestLogger({
@@ -312,10 +321,22 @@ const tracer = new TracerNestLogger({
   dataDir: './.tracernest'          // Storage directory
 });
 
-// Register TracerNest middleware before application routes
+// ============================================================
+// 1. MUST BE FIRST: TracerNest Logger Middleware
+// ============================================================
+// Captures all incoming API traffic & serves the dashboard
 app.use(tracer.middleware());
 
-// Application routes
+// ============================================================
+// 2. Application Middleware (CORS, Body Parsers, Cookies)
+// ============================================================
+app.use(cors({ origin: ['https://mydomain.com'], credentials: true }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// ============================================================
+// 3. Application Routes
+// ============================================================
 app.get('/api/users', (req, res) => {
   console.log('[Users] Fetching user directory');
   res.json([{ id: 1, name: 'Alice' }]);
@@ -324,6 +345,13 @@ app.get('/api/users', (req, res) => {
 app.post('/api/checkout', (req, res) => {
   console.warn('[Checkout] Processing payment');
   res.status(200).json({ status: 'confirmed' });
+});
+
+// ============================================================
+// 4. LAST: Global Error Handling Middleware
+// ============================================================
+app.use((err, req, res, next) => {
+  res.status(500).json({ error: 'Internal Server Error' });
 });
 
 app.listen(PORT, () => {
@@ -411,34 +439,65 @@ CMD ["node", "dist/server.js"]
 > - Mount a volume to `/app/.tracernest` so admin accounts, audit logs, and encryption keys persist across container restarts.
 > - For multi-replica/auto-scaled deployments, point `dialect: 'mysql'` to your shared database so all pods share identical telemetry and user sessions.
 
-### 5. Docker Container Deployment
+### 6. MySQL Database & Connection Pool Integration
 
-When running in containerized environments (Docker, Kubernetes, AWS ECS):
+For multi-instance, auto-scaled clusters, Kubernetes pods, or PM2 cluster mode, point TracerNest to a shared MySQL database. Because TracerNest strictly maintains **zero runtime dependencies**, it connects directly using your application's existing `mysql2` connection pool without forcing additional driver installations.
 
-```dockerfile
-FROM node:22-alpine
-WORKDIR /app
+#### Option A: Passing an Existing `mysql2` Connection Pool (Recommended)
 
-COPY package*.json ./
-RUN npm ci
+Pass your application's existing `mysql2` connection pool directly into `mysql.pool`. TracerNest will reuse your existing database connections, minimizing connection overhead:
 
-COPY . .
+```typescript
+import mysql from 'mysql2/promise'; // or 'mysql2'
+import { TracerNestLogger } from 'tracernest-logger';
 
-# Ensure data directory has write permissions for SQLite WAL & encryption keys
-RUN mkdir -p /app/.tracernest && chown -R node:node /app/.tracernest
-VOLUME ["/app/.tracernest"]
+// 1. Create your application's standard MySQL connection pool
+const dbPool = mysql.createPool({
+  host: process.env.DB_HOST || '127.0.0.1',
+  port: Number(process.env.DB_PORT) || 3306,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+});
 
-USER node
-EXPOSE 3000
+// 2. Pass the existing pool into TracerNest
+const tracer = new TracerNestLogger({
+  path: '/tracernest',
+  dialect: 'mysql',
+  mysql: {
+    pool: dbPool // Reuses your existing connection pool
+  },
+  tablePrefix: 'tracenest_' // Optional custom prefix (default: 'tracenest_')
+});
 
-CMD ["node", "dist/server.js"]
+app.use(tracer.middleware());
+```
+
+#### Option B: Standalone MySQL Credentials
+
+If you prefer TracerNest to manage its own database connection:
+
+```typescript
+const tracer = new TracerNestLogger({
+  path: '/tracernest',
+  dialect: 'mysql',
+  mysql: {
+    host: process.env.DB_HOST || '127.0.0.1',
+    port: 3306,
+    user: process.env.DB_USER || 'tracernest_user',
+    password: process.env.DB_PASSWORD || 'SecretPassword!',
+    database: process.env.DB_NAME || 'production_logs',
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: true } : false
+  },
+  tablePrefix: 'prod_telemetry_'
+});
 ```
 
 > [!TIP]
-> **Docker Staging Checklist:**
-> - Ensure Node.js `>= 22.5.0` is used for native SQLite (`node:sqlite`).
-> - Mount a volume to `/app/.tracernest` so admin accounts, audit logs, and encryption keys persist across container restarts.
-> - For multi-replica/auto-scaled deployments, point `dialect: 'mysql'` to your shared database so all pods share identical telemetry and user sessions.
+> **Automatic Schema Migration**: When `dialect: 'mysql'` is enabled, TracerNest automatically checks and creates all required tables on startup (`tracenest_users`, `tracenest_alert_configs`, `tracenest_audit_logs`, and `tracenest_system_meta`) with `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`. Zero manual SQL migration scripts are required.
 
 ---
 
@@ -447,21 +506,29 @@ CMD ["node", "dist/server.js"]
 ```typescript
 const tracer = new TracerNestLogger({
   path: '/tracernest',              // Dashboard mount path (default: '/tracernest')
+  apiPrefix: '/api',                // Optional gateway prefix (e.g. '/api' for Nginx reverse proxies)
+  publicPath: '/api/tracernest',    // Optional external browser path (auto-detected if omitted)
   title: 'Production Telemetry',    // Dashboard browser tab title
   bufferSize: 5000,                 // Circular in-memory buffer capacity
   dataDir: './.tracernest',         // SQLite database & encryption key folder
-  encryptionKey: process.env.ENCRYPTION_KEY, // 32+ char AES-256-GCM key to encrypt all HTTP request & response payloads
-  masterKey: process.env.KEY,       // 32+ char AES-256-GCM master encryption key for database storage
+  initialAdmin: {                   // Optional pre-seeded admin (eliminates interactive web setup)
+    username: 'admin',
+    password: 'MasterPassword123!'
+  },
+  disableSetupApi: false,           // Set true to disable POST /api/auth/setup in production
   encryptionKey: process.env.ENCRYPTION_KEY, // 32+ char AES-256-GCM key to encrypt all HTTP request & response payloads
   masterKey: process.env.KEY,       // 32+ char AES-256-GCM master encryption key for database storage
   dialect: 'sqlite',                // 'sqlite' | 'mysql'
+  mysql: {                          // Optional MySQL configuration (when dialect is 'mysql')
+    pool: dbPool                    // Existing mysql2 connection pool (or host, port, user, password, database)
+  },
+  tablePrefix: 'tracenest_',        // Persistent SQL table name prefix (default: 'tracenest_')
   trustProxy: false,                // Reverse proxy trust (false | true | string[] | CIDR)
   maxHttpBodyBytes: 524288,         // Max request/response body capture (512 KB)
   interceptStdout: true,            // Intercept console.log
   interceptStderr: true,            // Intercept console.error
   interceptHttp: true,              // Intercept HTTP request & response payloads
-  encryptPayloads: true,            // Encrypt shared request/response payloads in telemetry (auto-enabled when encryptionKey is provided)
-  encryptPayloads: true,            // Encrypt shared request/response payloads in telemetry (auto-enabled when encryptionKey is provided)
+  encryptPayloads: true,            // Encrypt shared request/response payloads in telemetry (auto-enabled by default)
   sensitiveHeaders: ['x-secret'],   // Custom header names to redact
   sensitiveFieldKeys: ['card_no'],  // Custom JSON keys to redact
   excludeRoutes: ['/healthz'],      // Routes excluded from HTTP logging
@@ -476,7 +543,6 @@ const tracer = new TracerNestLogger({
 ## Security & Privacy
 
 TracerNest is hardened against common web and API attack vectors:
-- **AES-256-GCM Payload Encryption:** All captured HTTP request and response bodies are encrypted using the initialization `encryptionKey` (or `masterKey`/`secret`). Ciphertext payloads remain encrypted across RAM buffers, exports, and SSE streams, decryptable on-demand via the dashboard or `POST /api/logs/decrypt`.
 - **AES-256-GCM Payload Encryption:** All captured HTTP request and response bodies are encrypted using the initialization `encryptionKey` (or `masterKey`/`secret`). Ciphertext payloads remain encrypted across RAM buffers, exports, and SSE streams, decryptable on-demand via the dashboard or `POST /api/logs/decrypt`.
 - **Scrypt Password Hashing:** Credentials protected by native `crypto.scrypt` with unique salts.
 - **Timing-Safe Verification (SEC-01):** Constant-time hash verification via `crypto.timingSafeEqual`.

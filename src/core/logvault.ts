@@ -32,6 +32,8 @@ export class TracerNestLogger {
   public readonly httpLogger: HttpLogger;
   public readonly httpHandler: HttpHandler;
   public readonly shutdownManager: GracefulShutdownManager;
+  public readonly basePath: string;
+  public readonly publicPath: string;
 
   private server: Server | null = null;
 
@@ -67,14 +69,27 @@ export class TracerNestLogger {
     this.secret = userEncryptionKey || this.sqlStore.getMasterKey();
 
     // Determine payload encryption for shared request/response bodies:
-    // Automatically enabled whenever an encryptionKey, masterKey, or secret is taken in initialization parameters,
-    // or when explicitly configured via effectiveConfig.encryptPayloads.
-    const shouldEncryptPayloads = effectiveConfig.encryptPayloads ?? Boolean(userEncryptionKey);
+    // Automatically enabled whenever ANY active encryption key exists (user-provided or auto-generated masterKey),
+    // unless explicitly disabled via effectiveConfig.encryptPayloads === false.
     const activeEncryptionKey = userEncryptionKey || this.secret;
+    const shouldEncryptPayloads = effectiveConfig.encryptPayloads !== false && Boolean(activeEncryptionKey);
 
     // 2. Initialize Security & Core Components
     this.rbac = new RBACManager(effectiveConfig.customRolePermissions);
     this.userStore = new UserStore(this.sqlStore);
+
+    // Pre-seed initial administrator account if configured and database has no users
+    const adminUser = effectiveConfig.initialAdmin?.username || process.env.TRACERNEST_ADMIN_USERNAME;
+    const adminPass = effectiveConfig.initialAdmin?.password || process.env.TRACERNEST_ADMIN_PASSWORD;
+    if (adminUser && adminPass && !this.userStore.hasUsers()) {
+      try {
+        this.userStore.createUser(adminUser, adminPass, 'admin');
+        console.log(`[TracerNest-Logger] Initial administrator account '${adminUser}' provisioned successfully.`);
+      } catch (err: any) {
+        console.warn(`[TracerNest-Logger] Notice: Could not auto-provision initial admin:`, err?.message || err);
+      }
+    }
+
     this.alertDispatcher = new AlertDispatcher(this.sqlStore);
     this.ringBuffer = new RingBuffer(effectiveConfig.bufferSize ?? 5000);
     this.streamManager = new StreamManager();
@@ -89,9 +104,18 @@ export class TracerNestLogger {
     });
 
     // 4. HTTP Application Request/Response Interceptor
-    let basePath = effectiveConfig.path || DEFAULT_BASE_PATH;
+    let basePath = effectiveConfig.path || effectiveConfig.basePath || DEFAULT_BASE_PATH;
     if (!basePath.startsWith('/')) basePath = '/' + basePath;
     if (basePath.endsWith('/') && basePath.length > 1) basePath = basePath.slice(0, -1);
+    this.basePath = basePath;
+
+    let publicPath = effectiveConfig.publicPath;
+    if (!publicPath && effectiveConfig.apiPrefix) {
+      const pfx = effectiveConfig.apiPrefix.startsWith('/') ? effectiveConfig.apiPrefix : '/' + effectiveConfig.apiPrefix;
+      const cleanPfx = pfx.replace(/\/+$/, '');
+      publicPath = `${cleanPfx}/${basePath.replace(/^\/+/, '')}`;
+    }
+    this.publicPath = publicPath || basePath;
 
     this.httpLogger = new HttpLogger({
       ringBuffer: this.ringBuffer,
@@ -174,20 +198,7 @@ export class TracerNestLogger {
         return handlerMiddleware(req, res, next);
       }
 
-      const expressBaseUrl = (req as any).baseUrl || '';
-      const originalUrl = (req as any).originalUrl || req.url || '/';
-      const url = req.url || '/';
-
-      let basePath = this.config.path || '/logvault';
-      if (!basePath.startsWith('/')) basePath = '/' + basePath;
-      if (basePath.endsWith('/') && basePath.length > 1) basePath = basePath.slice(0, -1);
-
-      const isLogVaultRoute =
-        (expressBaseUrl === basePath || expressBaseUrl.endsWith(basePath)) ||
-        (url === basePath || url.startsWith(basePath + '/') || url.startsWith(basePath + '?')) ||
-        (originalUrl === basePath || originalUrl.startsWith(basePath + '/') || originalUrl.startsWith(basePath + '?'));
-
-      if (isLogVaultRoute) {
+      if (this.httpHandler.isMatch(req)) {
         return handlerMiddleware(req, res, next);
       }
 

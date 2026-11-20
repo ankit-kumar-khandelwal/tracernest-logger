@@ -50,7 +50,7 @@ export class HttpLogger {
     this.excludeRoutes = options.excludeRoutes || [];
     this.customPatterns = options.customPatterns;
     this.encryptionKey = options.encryptionKey;
-    this.encryptPayloads = options.encryptPayloads ?? false;
+    this.encryptPayloads = options.encryptPayloads ?? Boolean(options.encryptionKey);
 
     const defaultSensitiveHeaders = [
       'authorization',
@@ -125,7 +125,8 @@ export class HttpLogger {
         authTag: enc.authTag,
         salt: enc.salt
       };
-    } catch {
+    } catch (err: any) {
+      console.error('[TracerNest-Logger] Payload encryption error:', err?.message || err);
       return data;
     }
   }
@@ -146,16 +147,24 @@ export class HttpLogger {
       const rawUrl = req.url || '/';
       const url = originalUrl;
 
-      // Skip internal TraceNest dashboard and API requests
-      const isInternalTraceNest =
-        expressBaseUrl === this.basePath ||
-        expressBaseUrl.endsWith(this.basePath) ||
-        rawUrl === this.basePath ||
-        rawUrl.startsWith(this.basePath + '/') ||
-        rawUrl.startsWith(this.basePath + '?') ||
-        originalUrl === this.basePath ||
-        originalUrl.startsWith(this.basePath + '/') ||
-        originalUrl.startsWith(this.basePath + '?');
+      // Skip internal TraceNest dashboard and API requests (matching base path, /api prefix, and alternate spellings)
+      const candidatePaths = [
+        this.basePath,
+        this.basePath.startsWith('/api') ? this.basePath.replace(/^\/api(\/|$)/, '/') : `/api${this.basePath}`,
+        this.basePath.replace(/tracernest/g, 'tracenest'),
+        this.basePath.replace(/tracenest/g, 'tracernest')
+      ].filter(Boolean);
+
+      const isInternalTraceNest = candidatePaths.some(bp =>
+        expressBaseUrl === bp ||
+        expressBaseUrl.endsWith(bp) ||
+        rawUrl === bp ||
+        rawUrl.startsWith(bp + '/') ||
+        rawUrl.startsWith(bp + '?') ||
+        originalUrl === bp ||
+        originalUrl.startsWith(bp + '/') ||
+        originalUrl.startsWith(bp + '?')
+      );
 
       if (isInternalTraceNest || this.isRouteExcluded(req, url)) {
         return next();
@@ -173,9 +182,9 @@ export class HttpLogger {
 
       if (!existingBody && req.readable) {
         const originalOn = req.on.bind(req);
-        req.on = function (event: string, listener: (...args: any[]) => void): any {
+        const wrappedListener = function (this: any, event: string, listener: (...args: any[]) => void): any {
           if (event === 'data') {
-            const wrappedListener = (chunk: any) => {
+            const dataWrapper = (chunk: any) => {
               if (!reqBodyExceeded && chunk) {
                 const chunkStr = typeof chunk === 'string' ? chunk : Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
                 if (reqBodyBuffer.length + chunkStr.length <= 512 * 1024) {
@@ -186,10 +195,12 @@ export class HttpLogger {
               }
               listener(chunk);
             };
-            return originalOn('data', wrappedListener);
+            return originalOn('data', dataWrapper);
           }
           return originalOn(event, listener);
         };
+        req.on = wrappedListener;
+        req.addListener = wrappedListener;
       }
 
       // 2. Intercept Response Body & Status Code (handling Express res.json, res.send, and native res.write/res.end)
@@ -253,7 +264,11 @@ export class HttpLogger {
         let parsedReqBody: any = undefined;
         const currentReqBody = (req as any).body !== undefined ? (req as any).body : existingBody;
         if (currentReqBody !== undefined && currentReqBody !== null) {
-          parsedReqBody = this.sanitizeObject(currentReqBody);
+          const isGetOrHead = method === 'GET' || method === 'HEAD';
+          const isEmptyObj = typeof currentReqBody === 'object' && Object.keys(currentReqBody).length === 0;
+          if (!(isGetOrHead && isEmptyObj && reqBodyBuffer.trim().length === 0)) {
+            parsedReqBody = this.sanitizeObject(currentReqBody);
+          }
         } else if (reqBodyBuffer.trim().length > 0) {
           try {
             parsedReqBody = this.sanitizeObject(JSON.parse(reqBodyBuffer));

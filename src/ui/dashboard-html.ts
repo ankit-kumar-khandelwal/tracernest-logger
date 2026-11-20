@@ -2602,7 +2602,26 @@ ${brandTitleHtml}
   </div>
 
   <script>
-    const BASE_PATH = "${basePath}";
+    // Automatically detect the effective base path from the browser URL to seamlessly support
+    // Nginx reverse proxies (e.g. location /api/ { proxy_pass http://localhost:3000/; }),
+    // API gateways, subpath routing, and direct port access without requiring Nginx configuration changes.
+    const BASE_PATH = (function() {
+      try {
+        let p = (typeof window !== 'undefined' && window.location && window.location.pathname) ? window.location.pathname : '';
+        while (p.endsWith('/') && p.length > 1) {
+          p = p.slice(0, -1);
+        }
+        const subPages = ['/login', '/setup', '/decryption'];
+        for (let i = 0; i < subPages.length; i++) {
+          const page = subPages[i];
+          if (p.endsWith(page)) {
+            return p.slice(0, -page.length) || '/';
+          }
+        }
+        if (p) return p;
+      } catch (e) {}
+      return "${basePath}";
+    })();
     let token = sessionStorage.getItem('logvault_token') || '';
     let currentUser = null;
     let eventSource = null;
@@ -2668,6 +2687,11 @@ ${brandTitleHtml}
         const status = await statusRes.json();
 
         if (!status.initialized) {
+          if (status.setupDisabled) {
+            showToast('Web administrator setup is disabled. Please configure initialAdmin or run npx tracernest-reset-admin.', 'error');
+            showAuthScreen('login');
+            return;
+          }
           showAuthScreen('setup');
           return;
         }

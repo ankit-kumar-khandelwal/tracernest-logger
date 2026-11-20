@@ -21,6 +21,7 @@ import { getDashboardHtml } from '../ui/dashboard-html';
 export class HttpHandler {
   private config: LogVaultConfig;
   private basePath: string;
+  private publicPath?: string;
   private secret: string;
   private userStore: UserStore;
   private sqlStore: SqlStore;
@@ -62,26 +63,81 @@ export class HttpHandler {
     this.secret = dependencies.secret;
     this.httpLogger = dependencies.httpLogger;
 
-    let p = dependencies.config.path || '/logvault';
+    let p = dependencies.config.path || dependencies.config.basePath || '/logvault';
     if (!p.startsWith('/')) p = '/' + p;
     if (p.endsWith('/') && p.length > 1) p = p.slice(0, -1);
     this.basePath = p;
 
+    let pub = dependencies.config.publicPath;
+    if (!pub && dependencies.config.apiPrefix) {
+      const pfx = dependencies.config.apiPrefix.startsWith('/') ? dependencies.config.apiPrefix : '/' + dependencies.config.apiPrefix;
+      const cleanPfx = pfx.replace(/\/+$/, '');
+      pub = `${cleanPfx}/${this.basePath.replace(/^\/+/, '')}`;
+    }
+    this.publicPath = pub ? (pub.startsWith('/') ? pub : '/' + pub).replace(/\/+$/, '') : undefined;
+
     this.sessionDurationSeconds = dependencies.config.sessionDurationSeconds ?? 86400;
+  }
+
+  /**
+   * Return candidate base path prefixes to match against.
+   * Enables seamless support for Nginx reverse proxies with rewrite rules
+   * (e.g. location /api/ { proxy_pass http://localhost:3000/; }), subpath mounting,
+   * and both 'tracernest' and 'tracenest' spellings.
+   */
+  public getCandidateBasePaths(): string[] {
+    const paths = new Set<string>();
+    const add = (candidate?: string) => {
+      if (!candidate) return;
+      let clean = candidate.trim();
+      if (!clean.startsWith('/')) clean = '/' + clean;
+      if (clean.endsWith('/') && clean.length > 1) clean = clean.slice(0, -1);
+      paths.add(clean);
+    };
+
+    add(this.basePath);
+    if (this.publicPath) add(this.publicPath);
+
+    // If basePath doesn't start with /api, also register /api/basePath
+    if (!this.basePath.startsWith('/api/') && this.basePath !== '/api') {
+      add(`/api${this.basePath}`);
+    } else {
+      // If basePath starts with /api/, also register without /api/ for Nginx prefix stripping
+      const withoutApi = this.basePath.replace(/^\/api(\/|$)/, '/').replace(/\/+$/, '');
+      if (withoutApi) add(withoutApi);
+    }
+
+    // Support both 'tracernest' and 'tracenest' spellings
+    for (const item of Array.from(paths)) {
+      if (item.includes('tracernest')) {
+        add(item.replace(/tracernest/g, 'tracenest'));
+      } else if (item.includes('tracenest')) {
+        add(item.replace(/tracenest/g, 'tracernest'));
+      }
+    }
+
+    return Array.from(paths).sort((a, b) => b.length - a.length);
+  }
+
+  /**
+   * Check if an incoming request matches any candidate TracerNest route
+   */
+  public isMatch(req: IncomingMessage): boolean {
+    const expressBaseUrl = (req as any).baseUrl || '';
+    const originalUrl = (req as any).originalUrl || req.url || '/';
+    const url = req.url || '/';
+
+    const candidates = this.getCandidateBasePaths();
+    return candidates.some(bp =>
+      (expressBaseUrl === bp || expressBaseUrl.endsWith(bp)) ||
+      (url === bp || url.startsWith(bp + '/') || url.startsWith(bp + '?')) ||
+      (originalUrl === bp || originalUrl.startsWith(bp + '/') || originalUrl.startsWith(bp + '?'))
+    );
   }
 
   public middleware(): (req: IncomingMessage, res: ServerResponse, next: (err?: any) => void) => void {
     return (req, res, next) => {
-      const expressBaseUrl = (req as any).baseUrl || '';
-      const originalUrl = (req as any).originalUrl || req.url || '/';
-      const url = req.url || '/';
-
-      const isLogVaultRoute =
-        (expressBaseUrl === this.basePath || expressBaseUrl.endsWith(this.basePath)) ||
-        (url === this.basePath || url.startsWith(this.basePath + '/') || url.startsWith(this.basePath + '?')) ||
-        (originalUrl === this.basePath || originalUrl.startsWith(this.basePath + '/') || originalUrl.startsWith(this.basePath + '?'));
-
-      if (isLogVaultRoute) {
+      if (this.isMatch(req)) {
         this.handleRequest(req, res).then(handled => {
           if (!handled) next();
         }).catch(err => {
@@ -102,27 +158,42 @@ export class HttpHandler {
     const host = rawHost || 'localhost';
 
     let subPath = '';
-    try {
-      if (expressBaseUrl === this.basePath || expressBaseUrl.endsWith(this.basePath)) {
-        // Express router stripped basePath from req.url
-        const parsed = new URL(rawUrl, `http://${host}`);
-        subPath = parsed.pathname;
-      } else if (rawUrl === this.basePath || rawUrl.startsWith(this.basePath + '/') || rawUrl.startsWith(this.basePath + '?')) {
-        const parsed = new URL(rawUrl, `http://${host}`);
-        subPath = parsed.pathname.slice(this.basePath.length);
-      } else if (originalUrl === this.basePath || originalUrl.startsWith(this.basePath + '/') || originalUrl.startsWith(this.basePath + '?')) {
-        const parsed = new URL(originalUrl, `http://${host}`);
-        subPath = parsed.pathname.slice(this.basePath.length);
-      } else {
-        return false;
+    const candidates = this.getCandidateBasePaths();
+    let matchedPrefix = '';
+
+    for (const bp of candidates) {
+      if (expressBaseUrl === bp || expressBaseUrl.endsWith(bp)) {
+        try {
+          const parsed = new URL(rawUrl, `http://${host}`);
+          subPath = parsed.pathname;
+        } catch {
+          subPath = rawUrl.split('?')[0];
+        }
+        matchedPrefix = bp;
+        break;
+      } else if (rawUrl === bp || rawUrl.startsWith(bp + '/') || rawUrl.startsWith(bp + '?')) {
+        try {
+          const parsed = new URL(rawUrl, `http://${host}`);
+          subPath = parsed.pathname.slice(bp.length);
+        } catch {
+          subPath = rawUrl.split('?')[0].slice(bp.length);
+        }
+        matchedPrefix = bp;
+        break;
+      } else if (originalUrl === bp || originalUrl.startsWith(bp + '/') || originalUrl.startsWith(bp + '?')) {
+        try {
+          const parsed = new URL(originalUrl, `http://${host}`);
+          subPath = parsed.pathname.slice(bp.length);
+        } catch {
+          subPath = originalUrl.split('?')[0].slice(bp.length);
+        }
+        matchedPrefix = bp;
+        break;
       }
-    } catch {
-      const cleanRaw = rawUrl.split('?')[0];
-      if (cleanRaw.startsWith(this.basePath)) {
-        subPath = cleanRaw.slice(this.basePath.length);
-      } else {
-        subPath = cleanRaw;
-      }
+    }
+
+    if (!matchedPrefix) {
+      return false;
     }
 
     if (!subPath || !subPath.startsWith('/')) {
@@ -139,18 +210,30 @@ export class HttpHandler {
 
     this.setSecurityHeaders(res);
 
+    // Compute effective base path for client-side assets & API fetches (supporting Express sub-mounting and Nginx reverse proxy prefixes)
+    const forwardedPrefix = (req.headers['x-forwarded-prefix'] as string || '').trim().replace(/\/+$/, '');
+    let effectiveBasePath = matchedPrefix || this.publicPath || this.basePath;
+    if (expressBaseUrl && expressBaseUrl.endsWith(this.basePath)) {
+      effectiveBasePath = expressBaseUrl;
+    } else if (expressBaseUrl && !this.basePath.startsWith(expressBaseUrl)) {
+      effectiveBasePath = `${expressBaseUrl.replace(/\/+$/, '')}/${this.basePath.replace(/^\/+/, '')}`;
+    } else if (forwardedPrefix && !effectiveBasePath.startsWith(forwardedPrefix)) {
+      effectiveBasePath = `${forwardedPrefix}/${effectiveBasePath.replace(/^\/+/, '')}`;
+    }
+
     // 1. Dashboard UI Root & Direct Auth Pages
     if (method === 'GET' && (subPath === '/' || subPath === '' || subPath === '/login' || subPath === '/setup')) {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       const logoUri = this.resolveLogo(this.config.logo);
-      res.end(getDashboardHtml(this.basePath, this.config.title, logoUri));
+      res.end(getDashboardHtml(effectiveBasePath, this.config.title, logoUri));
       return true;
     }
 
     // 2. Auth Status: Checks if system has users (first-time setup detection)
     if (method === 'GET' && subPath === '/api/auth/status') {
       const initialized = this.userStore.hasUsers();
-      this.sendJson(res, 200, { initialized });
+      const setupDisabled = Boolean(this.config.disableSetupApi);
+      this.sendJson(res, 200, { initialized, setupDisabled });
       return true;
     }
 
@@ -167,22 +250,27 @@ export class HttpHandler {
 
     // 3. First-Time Setup: Create Root Administrator
     if (method === 'POST' && (subPath === '/api/auth/setup' || subPath === '/api/auth/setup/')) {
-      if (this.userStore.hasUsers()) {
-        this.sendJson(res, 400, { error: 'System is already initialized. Please sign in or use reset.' });
-        return true;
-      }
-
-      const body = await this.readJsonBody(req, res);
-      if (body === null) return true;
-      const username = body?.username;
-      const password = body?.password;
-
-      if (!username || !password) {
-        this.sendJson(res, 400, { error: 'Username and password are required' });
+      if (this.config.disableSetupApi) {
+        this.sendJson(res, 403, { error: 'Web administrator setup is disabled. Please configure initialAdmin or use the CLI reset utility.' });
         return true;
       }
 
       try {
+        if (this.userStore.hasUsers()) {
+          this.sendJson(res, 400, { error: 'System is already initialized. Please sign in or use reset.' });
+          return true;
+        }
+
+        const body = await this.readJsonBody(req, res);
+        if (body === null) return true;
+        const username = body?.username;
+        const password = body?.password;
+
+        if (!username || !password) {
+          this.sendJson(res, 400, { error: 'Username and password are required' });
+          return true;
+        }
+
         const adminProfile = this.userStore.createUser(username, password, 'admin');
         const token = CryptoSecurity.createToken(
           {
@@ -203,19 +291,34 @@ export class HttpHandler {
           details: { message: 'First-time setup completed in encrypted SQL store' }
         });
 
-        const isHttps = req.headers['x-forwarded-proto'] === 'https' || (req.socket as any)?.encrypted;
-        res.setHeader('Set-Cookie', `tracernest_token=${encodeURIComponent(token)}; Path=${this.basePath || '/'}; HttpOnly; SameSite=Lax${isHttps ? '; Secure' : ''}`);
+        if (!res.headersSent) {
+          const isHttps = req.headers['x-forwarded-proto'] === 'https' || (req.socket as any)?.encrypted;
+          res.setHeader('Set-Cookie', `tracernest_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${isHttps ? '; Secure' : ''}`);
 
-        this.sendJson(res, 201, {
-          token,
-          user: {
-            ...adminProfile,
-            permissions: this.rbac.getPermissions('admin')
-          }
-        });
+          this.sendJson(res, 201, {
+            token,
+            user: {
+              ...adminProfile,
+              permissions: this.rbac.getPermissions('admin')
+            }
+          });
+        }
       } catch (err: any) {
-        console.error('[TracerNest-Logger] Setup error creating admin user:', err?.message || err);
-        this.sendJson(res, 400, { error: err.message || 'Failed to create root administrator' });
+        console.error('[TracerNest-Logger] Setup error creating admin user:', err?.stack || err?.message || err);
+        const errMsg = String(err?.message || err || '');
+        let userFacingError = errMsg || 'Failed to create root administrator';
+
+        // Detect SQLite directory permission or readonly database issues in Docker
+        if (errMsg.includes('readonly') || errMsg.includes('EACCES') || errMsg.includes('permission denied')) {
+          userFacingError = `Storage permission error: Unable to write SQLite database file in directory '${this.config.dataDir || './.tracernest'}'. In Docker, verify volume ownership (e.g., 'chown -R node:node /app/.tracernest') or configure 'dataDir: "/tmp/.tracernest"'. Original: ${errMsg}`;
+        } else if (errMsg.includes('locked') || errMsg.includes('busy')) {
+          userFacingError = `Database locked: Concurrent write conflict in SQLite. In clustered containers, ensure WAL mode is enabled or use MySQL dialect. Original: ${errMsg}`;
+        }
+
+        this.sendJson(res, 500, {
+          error: 'Administrator Setup Failed',
+          details: userFacingError
+        });
       }
       return true;
     }
@@ -287,7 +390,7 @@ export class HttpHandler {
       });
 
       const isHttps = req.headers['x-forwarded-proto'] === 'https' || (req.socket as any)?.encrypted;
-      res.setHeader('Set-Cookie', `tracernest_token=${encodeURIComponent(token)}; Path=${this.basePath || '/'}; HttpOnly; SameSite=Lax${isHttps ? '; Secure' : ''}`);
+      res.setHeader('Set-Cookie', `tracernest_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${isHttps ? '; Secure' : ''}`);
 
       this.sendJson(res, 200, {
         token,
@@ -391,7 +494,7 @@ export class HttpHandler {
         );
 
         const isHttps = req.headers['x-forwarded-proto'] === 'https' || (req.socket as any)?.encrypted;
-        res.setHeader('Set-Cookie', `tracernest_token=${encodeURIComponent(freshToken)}; Path=${this.basePath || '/'}; HttpOnly; SameSite=Lax${isHttps ? '; Secure' : ''}`);
+        res.setHeader('Set-Cookie', `tracernest_token=${encodeURIComponent(freshToken)}; Path=/; HttpOnly; SameSite=Lax${isHttps ? '; Secure' : ''}`);
 
         this.sendJson(res, 200, {
           success: true,
@@ -406,7 +509,7 @@ export class HttpHandler {
 
     // 5.2 Logout (Clear session cookie)
     if (method === 'POST' && subPath === '/api/auth/logout') {
-      res.setHeader('Set-Cookie', `tracernest_token=; Path=${this.basePath || '/'}; Expires=Thu, 01 Jan 1970 00:00:01 GMT; HttpOnly; SameSite=Lax`);
+      res.setHeader('Set-Cookie', `tracernest_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; HttpOnly; SameSite=Lax`);
       this.sendJson(res, 200, { success: true, message: 'Logged out successfully' });
       return true;
     }

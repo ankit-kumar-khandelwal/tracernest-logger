@@ -126,7 +126,35 @@ const tracer = new TracerNestLogger({
 
 ### 4. MySQL Storage Configuration
 
-By default, TracerNest uses zero-config SQLite. To centralize logs into an external MySQL database:
+By default, TracerNest uses zero-config SQLite. For clustered containers, Kubernetes, or multi-instance deployments, point TracerNest to an external MySQL database.
+
+#### Option A: Existing `mysql2` Pool (Recommended)
+Reuse your application's existing connection pool without creating extra connections or installing extra dependencies:
+
+```typescript
+import mysql from 'mysql2/promise'; // or 'mysql2'
+import { TracerNestLogger } from 'tracernest-logger';
+
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || '127.0.0.1',
+  port: 3306,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10
+});
+
+const tracer = new TracerNestLogger({
+  dialect: 'mysql',
+  tablePrefix: 'prod_telemetry_',
+  mysql: {
+    pool: pool // Pass your existing mysql2 pool
+  }
+});
+```
+
+#### Option B: Standalone Credentials
 
 ```typescript
 const tracer = new TracerNestLogger({

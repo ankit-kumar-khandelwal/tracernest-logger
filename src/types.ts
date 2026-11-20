@@ -211,10 +211,27 @@ export type TrustProxyOption =
 
 export interface TracerNestLoggerConfig {
   /**
-   * Path where the dashboard and API are mounted (e.g. '/tracernest-logger' or '/tracenest')
+   * Path where the dashboard and API are mounted (e.g. '/tracernest-logger', '/tracenest', or '/api/tracenest')
    * Default: '/tracernest-logger'
    */
   path?: string;
+
+  /**
+   * Alias for `path`: Base path where the dashboard and API are hosted.
+   */
+  basePath?: string;
+
+  /**
+   * Optional public URL path exposed to browser clients through Nginx or API gateways (e.g. '/api/tracenest').
+   * If not specified, automatically derived from browser location or `apiPrefix` + `path`.
+   */
+  publicPath?: string;
+
+  /**
+   * Optional global API prefix to prepend to all routes (e.g. '/api' -> '/api/tracenest')
+   * Useful when Nginx or an API gateway forwards all backend requests under an '/api' route.
+   */
+  apiPrefix?: string;
 
   /**
    * Database dialect to use for persistent storage.
@@ -424,6 +441,25 @@ export interface TracerNestLoggerConfig {
    * Default: Permits dashboard assets and Google Fonts typography ('https://fonts.googleapis.com' and 'https://fonts.gstatic.com').
    */
   csp?: string | boolean;
+
+  /**
+   * Pre-seed or auto-provision root administrator credentials on startup.
+   * If provided and no users exist in the database, TracerNest automatically creates this admin account,
+   * completely eliminating the need for the interactive web setup API behind Nginx/Docker.
+   * Can also be set via process.env.TRACERNEST_ADMIN_USERNAME and process.env.TRACERNEST_ADMIN_PASSWORD.
+   */
+  initialAdmin?: {
+    username: string;
+    password: string;
+  };
+
+  /**
+   * Disable the interactive web first-time setup API (`POST /api/auth/setup`).
+   * When true, administrators can only be provisioned via `initialAdmin` config, environment variables, or CLI reset utility.
+   * Recommended for locked-down production Nginx reverse proxy deployments.
+   * Default: false
+   */
+  disableSetupApi?: boolean;
 }
 
 export type TraceNestConfig = TracerNestLoggerConfig;

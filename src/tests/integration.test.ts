@@ -134,9 +134,9 @@ test('Integration: HTTP Request/Response JSON logging, TTL rules & Admin Setup',
       });
     });
 
-    // 3. Query logs to verify HTTP request/response JSON was captured and embedded!
+    // 3. Query logs with ?decrypt=true to verify HTTP request/response JSON was captured and decrypted
     const mockQueryLogs = createMockReqRes({
-      url: '/logvault/api/logs?source=http',
+      url: '/logvault/api/logs?source=http&decrypt=true',
       headers: { authorization: `Bearer ${token}` }
     });
     await vault.handleRequest(mockQueryLogs.req, mockQueryLogs.res);
@@ -2051,6 +2051,122 @@ test('Integration: Request & Response Payload AES-256-GCM Encryption with Initia
     assert.strictEqual(exportResult.statusCode, 200);
     assert.ok(exportResult.body.includes('Top Secret Payload'), 'Export with decrypt=true must include decrypted content');
 
+  } finally {
+    tracer.stop();
+    if (existsSync(testDataDir)) rmSync(testDataDir, { recursive: true, force: true });
+  }
+});
+
+test('Integration: Auto-provision Initial Administrator via initialAdmin Config & disableSetupApi', async () => {
+  const testDataDir = './test_data_init_admin_' + Date.now();
+
+  const tracer = new TracerNestLogger({
+    path: '/tracernest',
+    dataDir: testDataDir,
+    initialAdmin: {
+      username: 'preseededadmin',
+      password: 'PreSeededPassword123!'
+    },
+    disableSetupApi: true
+  });
+
+  try {
+    // 1. Verify GET /api/auth/status reports initialized: true and setupDisabled: true
+    const mockStatus = createMockReqRes({
+      method: 'GET',
+      url: '/tracernest/api/auth/status'
+    });
+    await tracer.handleRequest(mockStatus.req, mockStatus.res);
+    const statusRes = mockStatus.getResponse();
+    assert.strictEqual(statusRes.statusCode, 200);
+    assert.strictEqual(statusRes.json().initialized, true, 'Database must be initialized via initialAdmin');
+    assert.strictEqual(statusRes.json().setupDisabled, true, 'setupDisabled must be true');
+
+    // 2. Verify POST /api/auth/setup is blocked with 403 Forbidden
+    const mockSetup = createMockReqRes({
+      method: 'POST',
+      url: '/tracernest/api/auth/setup',
+      headers: { 'content-type': 'application/json' },
+      body: { username: 'attacker', password: 'HackPassword123!' }
+    });
+    await tracer.handleRequest(mockSetup.req, mockSetup.res);
+    const setupRes = mockSetup.getResponse();
+    assert.strictEqual(setupRes.statusCode, 403, 'POST /api/auth/setup must return 403 when disableSetupApi is true');
+
+    // 3. Verify the preseeded admin can login successfully
+    const mockLogin = createMockReqRes({
+      method: 'POST',
+      url: '/tracernest/api/auth/login',
+      headers: { 'content-type': 'application/json' },
+      body: { username: 'preseededadmin', password: 'PreSeededPassword123!' }
+    });
+    await tracer.handleRequest(mockLogin.req, mockLogin.res);
+    const loginRes = mockLogin.getResponse();
+    assert.strictEqual(loginRes.statusCode, 200, 'Pre-seeded admin must be able to log in');
+    assert.ok(loginRes.json().token);
+    assert.strictEqual(loginRes.json().user.username, 'preseededadmin');
+    assert.strictEqual(loginRes.json().user.role, 'admin');
+
+  } finally {
+    tracer.stop();
+    if (existsSync(testDataDir)) rmSync(testDataDir, { recursive: true, force: true });
+  }
+});
+
+test('Integration: Reverse Proxy Prefix Stripping, Dual Route Matching & Spelling Aliases', async () => {
+  const testDataDir = './test_data_proxy_' + Date.now();
+
+  const tracer = new TracerNestLogger({
+    path: '/tracenest', // Notice without 'r'
+    apiPrefix: '/api',  // External gateway prefix
+    dataDir: testDataDir
+  });
+
+  try {
+    // 1. Check candidate paths: must include /api/tracenest, /api/tracernest, /tracenest, /tracernest
+    const candidates = tracer.httpHandler.getCandidateBasePaths();
+    assert.ok(candidates.includes('/api/tracenest'), 'Must include /api/tracenest');
+    assert.ok(candidates.includes('/api/tracernest'), 'Must include /api/tracernest');
+    assert.ok(candidates.includes('/tracenest'), 'Must include /tracenest');
+    assert.ok(candidates.includes('/tracernest'), 'Must include /tracernest');
+
+    // 2. Request through Nginx that stripped /api/ (Node receives /tracenest/api/auth/status)
+    const mockStripped = createMockReqRes({
+      method: 'GET',
+      url: '/tracenest/api/auth/status'
+    });
+    assert.strictEqual(tracer.httpHandler.isMatch(mockStripped.req), true);
+    await tracer.handleRequest(mockStripped.req, mockStripped.res);
+    assert.strictEqual(mockStripped.getResponse().statusCode, 200);
+
+    // 3. Request through proxy preserving /api/ (Node receives /api/tracenest/api/auth/status)
+    const mockUnstripped = createMockReqRes({
+      method: 'GET',
+      url: '/api/tracenest/api/auth/status'
+    });
+    assert.strictEqual(tracer.httpHandler.isMatch(mockUnstripped.req), true);
+    await tracer.handleRequest(mockUnstripped.req, mockUnstripped.res);
+    assert.strictEqual(mockUnstripped.getResponse().statusCode, 200);
+
+    // 4. Request using 'tracernest' spelling (Node receives /tracernest/api/auth/status)
+    const mockAlternate = createMockReqRes({
+      method: 'GET',
+      url: '/tracernest/api/auth/status'
+    });
+    assert.strictEqual(tracer.httpHandler.isMatch(mockAlternate.req), true);
+    await tracer.handleRequest(mockAlternate.req, mockAlternate.res);
+    assert.strictEqual(mockAlternate.getResponse().statusCode, 200);
+
+    // 5. Dashboard HTML must include automatic BASE_PATH detection
+    const mockHtml = createMockReqRes({
+      method: 'GET',
+      url: '/tracenest'
+    });
+    await tracer.handleRequest(mockHtml.req, mockHtml.res);
+    const htmlRes = mockHtml.getResponse();
+    assert.strictEqual(htmlRes.statusCode, 200);
+    assert.ok(htmlRes.body.includes('window.location.pathname'));
+    assert.ok(htmlRes.body.includes('BASE_PATH'));
   } finally {
     tracer.stop();
     if (existsSync(testDataDir)) rmSync(testDataDir, { recursive: true, force: true });
