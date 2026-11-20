@@ -13,6 +13,7 @@
 [![npm version](https://img.shields.io/npm/v/tracernest-logger)](https://www.npmjs.com/package/tracernest-logger)
 [![npm downloads](https://img.shields.io/npm/dm/tracernest-logger)](https://www.npmjs.com/package/tracernest-logger)
 [![Socket Security](https://socket.dev/api/badge/npm/package/tracernest-logger)](https://socket.dev/npm/package/tracernest-logger)
+[![Socket Security](https://socket.dev/api/badge/npm/package/tracernest-logger)](https://socket.dev/npm/package/tracernest-logger)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-10B981.svg?style=flat-square)](LICENSE)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-10B981.svg?style=flat-square)](package.json)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-38BDF8.svg?style=flat-square)](package.json)
@@ -75,6 +76,7 @@ app.listen(3000, () => {
   - [2. Fastify](#2-fastify)
   - [3. Native Node.js HTTP Server](#3-native-nodejs-http-server)
   - [4. Dedicated Standalone Port (Optional)](#4-dedicated-standalone-port-optional)
+  - [5. Docker Container Deployment](#5-docker-container-deployment)
   - [5. Docker Container Deployment](#5-docker-container-deployment)
 - [Configuration Reference](#configuration-reference)
 - [Security & Privacy](#security--privacy)
@@ -409,6 +411,35 @@ CMD ["node", "dist/server.js"]
 > - Mount a volume to `/app/.tracernest` so admin accounts, audit logs, and encryption keys persist across container restarts.
 > - For multi-replica/auto-scaled deployments, point `dialect: 'mysql'` to your shared database so all pods share identical telemetry and user sessions.
 
+### 5. Docker Container Deployment
+
+When running in containerized environments (Docker, Kubernetes, AWS ECS):
+
+```dockerfile
+FROM node:22-alpine
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+
+# Ensure data directory has write permissions for SQLite WAL & encryption keys
+RUN mkdir -p /app/.tracernest && chown -R node:node /app/.tracernest
+VOLUME ["/app/.tracernest"]
+
+USER node
+EXPOSE 3000
+
+CMD ["node", "dist/server.js"]
+```
+
+> [!TIP]
+> **Docker Staging Checklist:**
+> - Ensure Node.js `>= 22.5.0` is used for native SQLite (`node:sqlite`).
+> - Mount a volume to `/app/.tracernest` so admin accounts, audit logs, and encryption keys persist across container restarts.
+> - For multi-replica/auto-scaled deployments, point `dialect: 'mysql'` to your shared database so all pods share identical telemetry and user sessions.
+
 ---
 
 ## Configuration Reference
@@ -421,12 +452,15 @@ const tracer = new TracerNestLogger({
   dataDir: './.tracernest',         // SQLite database & encryption key folder
   encryptionKey: process.env.ENCRYPTION_KEY, // 32+ char AES-256-GCM key to encrypt all HTTP request & response payloads
   masterKey: process.env.KEY,       // 32+ char AES-256-GCM master encryption key for database storage
+  encryptionKey: process.env.ENCRYPTION_KEY, // 32+ char AES-256-GCM key to encrypt all HTTP request & response payloads
+  masterKey: process.env.KEY,       // 32+ char AES-256-GCM master encryption key for database storage
   dialect: 'sqlite',                // 'sqlite' | 'mysql'
   trustProxy: false,                // Reverse proxy trust (false | true | string[] | CIDR)
   maxHttpBodyBytes: 524288,         // Max request/response body capture (512 KB)
   interceptStdout: true,            // Intercept console.log
   interceptStderr: true,            // Intercept console.error
   interceptHttp: true,              // Intercept HTTP request & response payloads
+  encryptPayloads: true,            // Encrypt shared request/response payloads in telemetry (auto-enabled when encryptionKey is provided)
   encryptPayloads: true,            // Encrypt shared request/response payloads in telemetry (auto-enabled when encryptionKey is provided)
   sensitiveHeaders: ['x-secret'],   // Custom header names to redact
   sensitiveFieldKeys: ['card_no'],  // Custom JSON keys to redact
@@ -443,6 +477,7 @@ const tracer = new TracerNestLogger({
 
 TracerNest is hardened against common web and API attack vectors:
 - **AES-256-GCM Payload Encryption:** All captured HTTP request and response bodies are encrypted using the initialization `encryptionKey` (or `masterKey`/`secret`). Ciphertext payloads remain encrypted across RAM buffers, exports, and SSE streams, decryptable on-demand via the dashboard or `POST /api/logs/decrypt`.
+- **AES-256-GCM Payload Encryption:** All captured HTTP request and response bodies are encrypted using the initialization `encryptionKey` (or `masterKey`/`secret`). Ciphertext payloads remain encrypted across RAM buffers, exports, and SSE streams, decryptable on-demand via the dashboard or `POST /api/logs/decrypt`.
 - **Scrypt Password Hashing:** Credentials protected by native `crypto.scrypt` with unique salts.
 - **Timing-Safe Verification (SEC-01):** Constant-time hash verification via `crypto.timingSafeEqual`.
 - **Token Invalidation (SEC-02):** Immediate token revocation on user role modification.
@@ -450,6 +485,25 @@ TracerNest is hardened against common web and API attack vectors:
 - **Proxy Header Defense (SEC-10):** Direct TCP socket IP extraction by default and reverse traversal from trusted proxy ends.
 - **Dual Login Throttling (SEC-10):** Independent IP-level and account-level rate limiting on login attempts.
 - **Content Security Policy (CSP):** Embedded dashboard serves strict CSP headers.
+
+### Socket.dev & Supply-Chain Security Verification
+
+TracerNest maintains a top-tier security rating on [Socket.dev](https://socket.dev/npm/package/tracernest-logger):
+- **Zero Runtime Dependencies (`dependencies: {}`):** Zero attack surface for nested dependency takeovers, malicious typosquats, or prototype pollutions.
+- **Zero Telemetry / No Phone-Home:** TracerNest transmits zero telemetry, metrics, or diagnostic data to third-party cloud servers. All logs remain 100% on your host machine.
+- **Declared Capabilities:** Static scanners flag `networkAccess` and `fsAccess`. These are core, intentional architectural primitives:
+  - `networkAccess`: Required for passive HTTP request/response interception (`node:http`), mounting the local `/tracernest` router, and dispatching operator-configured incident alerts (webhooks / SMTP).
+  - `fsAccess`: Required for local encrypted SQLite database storage and WAL journal locking.
+
+For organizations running **Socket.dev CI** gates, whitelist TracerNest in your root `socket.yml`:
+```yaml
+# socket.yml
+project:
+  ignore:
+    - package: "tracernest-logger"
+      issue: "networkAccess"
+      reason: "Self-hosted HTTP observability dashboard requiring local HTTP interception and dashboard routing."
+```
 
 ### Socket.dev & Supply-Chain Security Verification
 
@@ -505,7 +559,7 @@ TracerNest Logger follows [Semantic Versioning (SemVer)](https://semver.org/):
 - **Minor (1.X.0):** New features, performance enhancements, and backward-compatible additions.
 - **Patch (1.0.X):** Bug fixes, security hardening, and documentation updates.
 
-Current Release: **`1.7.4`**
+Current Release: **`1.7.7`**
 
 ---
 
