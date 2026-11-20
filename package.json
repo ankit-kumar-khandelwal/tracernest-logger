@@ -1,6 +1,6 @@
 {
   "name": "tracernest-logger",
-  "version": "1.7.5",
+  "version": "1.7.7",
   "description": "Zero-dependency, high-security Node.js application telemetry logger, live trace monitor & ops dashboard with encrypted SQL storage, RBAC, HTTP interception, real client IP extraction, and graceful shutdown",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -10,6 +10,7 @@
   },
   "files": [
     "dist",
+    "src",
     "assets",
     "socket.yml",
     "LICENSE",
@@ -18,7 +19,9 @@
     "!dist/tests/**",
     "!dist/tests",
     "!dist/demo.*",
-    "!dist/**/*.map"
+    "!src/tests/**",
+    "!src/tests",
+    "!src/demo.*"
   ],
   "engines": {
     "node": ">=18.0.0"
@@ -68,18 +71,8 @@
   "author": "TracerNest-Logger Contributors <contact@tracernest.dev>",
   "license": "Apache-2.0",
   "devDependencies": {
-    "@types/express": "^5.0.6",
     "@types/node": "^22.20.5",
-    "express": "^4.22.3",
     "typescript": "^5.9.3"
-  },
-  "peerDependencies": {
-    "express": ">=4.0.0"
-  },
-  "peerDependenciesMeta": {
-    "express": {
-      "optional": true
-    }
   },
   "dependencies": {}
 }

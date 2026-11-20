@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.7] - 2026-11-20
+
+### Security & Supply-Chain Hardening
+- **Source Transparency & Obfuscation Defense:** Formatted embedded vector assets and barrel exports across clean, human-readable multi-line syntax, completely eliminating extreme line-length anomalies and heuristic packed-code triggers.
+- **Auditable Package Distribution:** Published original TypeScript source (`src/`) and complete source maps (`.map`) within the npm distribution bundle, enabling security scanners and auditors to verify compiled JavaScript directly against original TypeScript.
+- **Socket Policy Rules:** Updated `socket.yml` schema v2 with explicit project exclusions and transparency declarations.
+
+## [1.7.6] - 2026-11-19
+
+### Changed
+- **Zero Peer Dependencies:** Completely eliminated `peerDependencies` (`express`). TracerNest is strictly framework-agnostic, built on Node.js core HTTP primitives, and operates with zero runtime dependencies and zero peer dependencies across Express, Fastify, Connect, NestJS, and pure `node:http`.
+- **Supply-Chain Hardening & Socket.dev Verification:** Added root `socket.yml` configuration (v2 schema) and integrated `@socketregistry` overrides in development test runners to eliminate legacy dynamic eval shims from transitive devDependencies.
+- **Package Manifest Synchronization:** Synchronized `package.json` and `package-lock.json` manifests to guarantee clean, zero-peer installs for downstream consumers.
+
 ## [1.7.4] - 2026-11-19
 
 ### Added

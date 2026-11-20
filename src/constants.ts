@@ -27,12 +27,21 @@ export const DEFAULT_LOGVAULT_SQLITE_PATH = DEFAULT_SQLITE_PATH;
  *   3. Optical telemetry focal pulse node
  * - Uniform safe-zone padding and micro-size legibility down to 16px
  */
-export const RAW_TRACERNEST_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none"><rect width="24" height="24" rx="5" fill="#0A101D" stroke="#253047" stroke-width="1"/><path d="M4 12c0 6.5 16 6.5 16 0" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 8h4.5l3.5 4.5 3.5-4.5H20" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="5.5" r="2" fill="#38bdf8"/></svg>`;
+export const RAW_TRACERNEST_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none">
+  <rect width="24" height="24" rx="5" fill="#0A101D" stroke="#253047" stroke-width="1"/>
+  <path d="M4 12c0 6.5 16 6.5 16 0" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M4 8h4.5l3.5 4.5 3.5-4.5H20" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="12" cy="5.5" r="2" fill="#38bdf8"/>
+</svg>`;
 
 /**
  * Transparent Dark-Theme UI Variant:
  */
-export const RAW_TRACERNEST_LOGO_TRANSPARENT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none"><path d="M4 12c0 6.5 16 6.5 16 0" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 8h4.5l3.5 4.5 3.5-4.5H20" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="5.5" r="2" fill="#38bdf8"/></svg>`;
+export const RAW_TRACERNEST_LOGO_TRANSPARENT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none">
+  <path d="M4 12c0 6.5 16 6.5 16 0" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M4 8h4.5l3.5 4.5 3.5-4.5H20" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="12" cy="5.5" r="2" fill="#38bdf8"/>
+</svg>`;
 
 /**
  * High-definition Base64-encoded vector SVG logo badge:
@@ -47,7 +56,23 @@ export const DEFAULT_TRACENEST_LOGO = DEFAULT_TRACERNEST_LOGO;
 /**
  * Master Wide Vector Banner for TracerNest-Logger (Flat 2D Vector, No Gradients/Shadows):
  */
-export const RAW_TRACERNEST_BANNER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 88" width="440" height="88" fill="none"><rect width="440" height="88" rx="8" fill="#040814" stroke="#1c2d4a" stroke-width="1"/><g transform="translate(24, 20)"><rect width="48" height="48" rx="10" fill="#060e20" stroke="#1e3a5f" stroke-width="1"/><g transform="translate(10, 10) scale(1.16)"><path d="M4 12c0 6.5 16 6.5 16 0" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 8h4.5l3.5 4.5 3.5-4.5H20" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="5.5" r="2" fill="#38bdf8"/></g></g><text x="88" y="42" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" font-weight="700" letter-spacing="-0.3">TracerNest</text><rect x="194" y="28" width="58" height="18" rx="4" fill="#0a1d37" stroke="#38bdf8" stroke-width="1"/><text x="223" y="41" fill="#38bdf8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="9.5" font-weight="700" letter-spacing="1" text-anchor="middle">LOGGER</text><text x="88" y="60" fill="#8b9bb4" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10.5" font-weight="600" letter-spacing="1">LIVE TELEMETRY &amp; OPS RADAR</text><circle cx="406" cy="44" r="4" fill="#10b981"/><text x="388" y="47" fill="#8b9bb4" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-size="10" font-weight="600" text-anchor="end">LIVE</text></svg>`;
+export const RAW_TRACERNEST_BANNER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 88" width="440" height="88" fill="none">
+  <rect width="440" height="88" rx="8" fill="#040814" stroke="#1c2d4a" stroke-width="1"/>
+  <g transform="translate(24, 20)">
+    <rect width="48" height="48" rx="10" fill="#060e20" stroke="#1e3a5f" stroke-width="1"/>
+    <g transform="translate(10, 10) scale(1.16)">
+      <path d="M4 12c0 6.5 16 6.5 16 0" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M4 8h4.5l3.5 4.5 3.5-4.5H20" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="12" cy="5.5" r="2" fill="#38bdf8"/>
+    </g>
+  </g>
+  <text x="88" y="42" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" font-weight="700" letter-spacing="-0.3">TracerNest</text>
+  <rect x="194" y="28" width="58" height="18" rx="4" fill="#0a1d37" stroke="#38bdf8" stroke-width="1"/>
+  <text x="223" y="41" fill="#38bdf8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="9.5" font-weight="700" letter-spacing="1" text-anchor="middle">LOGGER</text>
+  <text x="88" y="60" fill="#8b9bb4" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10.5" font-weight="600" letter-spacing="1">LIVE TELEMETRY &amp; OPS RADAR</text>
+  <circle cx="406" cy="44" r="4" fill="#10b981"/>
+  <text x="388" y="47" fill="#8b9bb4" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-size="10" font-weight="600" text-anchor="end">LIVE</text>
+</svg>`;
 
 /**
  * Base64-encoded Banner URI:

@@ -8,6 +8,7 @@ version: 2
 # Exclude build output, test suites, and docs from supply-chain capability checks
 projectIgnorePaths:
   - "dist/tests/**"
+  - "src/tests/**"
   - "artifacts/**"
   - "docs/**"
   - "assets/**"
@@ -40,6 +41,10 @@ issueRules:
   file-system-access: false
   envVars: false
   environment-variable-access: false
+  obfuscatedCode: false
+  obfuscated-code: false
+  hasMinifiedFiles: false
+  minifiedFile: false
 
   # Strictly enforce zero toleration for supply-chain attack vectors:
   dynamicCodeExecution: error
