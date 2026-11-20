@@ -37,10 +37,6 @@ import { TracerNestLogger } from 'tracernest-logger';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Upstream body parsers (optional, TracerNest natively captures bodies even without them)
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
 // Initialize TracerNest Logger
 const tracer = new TracerNestLogger({
   path: '/tracernest',              // Dashboard route path
@@ -49,11 +45,14 @@ const tracer = new TracerNestLogger({
   dataDir: './.tracernest'          // Encrypted SQLite and master key directory
 });
 
-// Register TracerNest middleware
-// Must be registered before your application routes to intercept requests!
+// 1. MUST BE FIRST: Mount TracerNest before CORS, body parsers, and routes!
 app.use(tracer.middleware());
 
-// Application Routes
+// 2. Application middleware (CORS, body parsers, etc.)
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// 3. Application Routes
 app.get('/api/users', (req, res) => {
   console.log('[API] Querying active user list');
   res.json([

@@ -16,7 +16,7 @@ In standard VPS, single Docker container, or small VM environments:
 In horizontal auto-scaled environments (Kubernetes, AWS ECS, Google Cloud Run) where multiple pods/containers run simultaneously:
 - **Storage Selection:** Switch dialect to **MySQL** (`dialect: 'mysql'`) pointing to an Amazon RDS, Google Cloud SQL, or managed MySQL cluster.
 - **Shared Telemetry Database:** All running instances write logs and read user records from the central database.
-- **Master Key Consistency:** Ensure all instances share the identical `masterKey` environment variable so AES-256-GCM encrypted records can be read across nodes.
+- **Mandatory Master Key in Initialization:** You **MUST** pass a persistent `masterKey` in the `TracerNestLogger` constructor options. In containers, file systems are ephemeral; passing `masterKey` directly during initialization guarantees it persists whenever containers are recreated newly and ensures all instances share the identical key to decrypt records and verify sessions.
 - **Sticky Sessions for SSE (Optional):** If streaming live logs across auto-scaled instances, enable sticky sessions (cookie-based affinity) on your ingress/load-balancer so browser SSE streams remain attached to an active pod.
 
 ---

@@ -13,6 +13,7 @@ const tracerNest = new TracerNestLogger({
   dialect: 'sqlite', // 'sqlite' or 'mysql'
   tablePrefix: 'tracernest_',
   interceptHttp: true, // Automatically logs URL, method, request JSON, response JSON, and latency
+  encryptPayloads: true, // Hardware-accelerated AES-256-GCM encryption for request & response bodies
   ttl: {
     defaultTtlSeconds: 86400, // 24 hours default
     sweepIntervalMs: 5000,    // Run purge sweep every 5 seconds for demonstration

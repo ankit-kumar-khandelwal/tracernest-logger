@@ -100,3 +100,18 @@ location /tracernest {
 }
 ```
 
+---
+
+## 6. HTTP 500 Error During First-Time Setup / CORS Rejection
+
+### Symptom
+Submitting the setup form (`POST /api/tracernest/api/auth/setup` or `POST /tracernest/api/auth/setup`) fails with HTTP 500 when accessing the dashboard via an IP address (e.g. AWS Elastic IP `https://65.0.109.218/api/tracernest`).
+
+### Cause
+If `app.use(tracer.middleware())` is registered **after** your application's `app.use(cors(corsOptions))` middleware, any request originating from an origin not explicitly listed in your CORS whitelist (such as your server's public IP) throws a CORS error (`Origin is not allowed by CORS`), which Express routes to your global error handler and responds with HTTP 500.
+
+### Resolution
+1. **Mount TracerNest FIRST**: Move `app.use(tracer.middleware())` above `app.use(cors(...))` and all route handlers.
+2. **Whitelist the Host IP**: If you must run CORS first, add your server's host IP (e.g. `https://65.0.109.218` and `http://65.0.109.218`) to your CORS `allowedOrigins` list.
+3. **Use Startup Pre-Seeding**: Alternatively, configure `initialAdmin: { username: 'admin', password: '...' }` in your `TracerNestLogger` options to completely eliminate the web setup step.
+

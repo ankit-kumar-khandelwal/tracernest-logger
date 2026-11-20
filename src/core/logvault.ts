@@ -32,21 +32,26 @@ export class TracerNestLogger {
   public readonly httpLogger: HttpLogger;
   public readonly httpHandler: HttpHandler;
   public readonly shutdownManager: GracefulShutdownManager;
+  public readonly basePath: string;
+  public readonly publicPath: string;
 
   private server: Server | null = null;
 
   constructor(config: TracerNestLoggerConfig = {}) {
-    const dataDir = config.dataDir || DEFAULT_DATA_DIR;
-    const defaultSqlPath = config.dataDir ? `${config.dataDir}/tracernest-logger.sql` : DEFAULT_SQL_PATH;
-    const defaultSqlitePath = config.dataDir ? `${config.dataDir}/tracernest-logger.sqlite` : DEFAULT_SQLITE_PATH;
+    const dataDir = config.dataDir || config.storageDir || config.folder || config.initFolder || (config as any).dir || DEFAULT_DATA_DIR;
+    const defaultSqlPath = `${dataDir}/tracernest-logger.sql`;
+    const defaultSqlitePath = `${dataDir}/tracernest-logger.sqlite`;
 
     const effectiveConfig: TracerNestLoggerConfig = {
       path: DEFAULT_BASE_PATH,
       title: DEFAULT_APP_TITLE,
       logo: DEFAULT_TRACERNEST_LOGO,
       dataDir,
-      sqlFilePath: defaultSqlPath,
-      sqliteFilePath: defaultSqlitePath,
+      storageDir: dataDir,
+      folder: dataDir,
+      initFolder: dataDir,
+      sqlFilePath: config.sqlFilePath || defaultSqlPath,
+      sqliteFilePath: config.sqliteFilePath || defaultSqlitePath,
       tablePrefix: DEFAULT_TABLE_PREFIX,
       ...config
     };
@@ -55,7 +60,10 @@ export class TracerNestLogger {
     // 1. Initialize SQL Storage (SQLite + auto-synchronized encrypted SQL file, or MySQL)
     const userEncryptionKey = effectiveConfig.encryptionKey || effectiveConfig.secret || effectiveConfig.masterKey;
     this.sqlStore = new SqlStore({
-      dataDir: effectiveConfig.dataDir,
+      dataDir,
+      storageDir: dataDir,
+      folder: dataDir,
+      initFolder: dataDir,
       sqlFilePath: effectiveConfig.sqlFilePath,
       sqliteFilePath: effectiveConfig.sqliteFilePath,
       masterKey: userEncryptionKey,
@@ -67,16 +75,47 @@ export class TracerNestLogger {
     this.secret = userEncryptionKey || this.sqlStore.getMasterKey();
 
     // Determine payload encryption for shared request/response bodies:
-    // Automatically enabled whenever an encryptionKey, masterKey, or secret is taken in initialization parameters,
-    // or when explicitly configured via effectiveConfig.encryptPayloads.
-    const shouldEncryptPayloads = effectiveConfig.encryptPayloads ?? Boolean(userEncryptionKey);
+    // Automatically enabled whenever ANY active encryption key exists (user-provided or auto-generated masterKey),
+    // unless explicitly disabled via effectiveConfig.encryptPayloads === false.
     const activeEncryptionKey = userEncryptionKey || this.secret;
+    const shouldEncryptPayloads = effectiveConfig.encryptPayloads !== false && Boolean(activeEncryptionKey);
 
     // 2. Initialize Security & Core Components
     this.rbac = new RBACManager(effectiveConfig.customRolePermissions);
     this.userStore = new UserStore(this.sqlStore);
+
+    // Pre-seed initial administrator account if configured and database has no users
+    const adminUser = effectiveConfig.initialAdmin?.username;
+    const adminPass = effectiveConfig.initialAdmin?.password;
+    if (adminUser && adminPass && !this.userStore.hasUsers()) {
+      try {
+        this.userStore.createUser(adminUser, adminPass, 'admin');
+        console.log(`[TracerNest-Logger] Initial administrator account '${adminUser}' provisioned successfully.`);
+      } catch (err: any) {
+        console.warn(`[TracerNest-Logger] Notice: Could not auto-provision initial admin:`, err?.message || err);
+      }
+    }
+
     this.alertDispatcher = new AlertDispatcher(this.sqlStore);
-    this.ringBuffer = new RingBuffer(effectiveConfig.bufferSize ?? 5000);
+    const shouldPersistLogs = effectiveConfig.persistLogs !== false;
+    this.ringBuffer = new RingBuffer(
+      effectiveConfig.bufferSize ?? 5000,
+      this.sqlStore,
+      shouldPersistLogs
+    );
+
+    // Automatically reload persisted terminal and HTTP logs upon server startup
+    if (shouldPersistLogs) {
+      try {
+        const persistedLogs = this.sqlStore.getRecentLogs(effectiveConfig.bufferSize ?? 5000);
+        if (persistedLogs.length > 0) {
+          this.ringBuffer.loadPersistedLogs(persistedLogs);
+        }
+      } catch (err: any) {
+        console.warn('[TracerNest-Logger] Notice: Could not reload persisted logs:', err?.message || err);
+      }
+    }
+
     this.streamManager = new StreamManager();
     this.auditLogger = new AuditLogger(1000, this.sqlStore);
     this.rateLimiter = new RateLimiter(effectiveConfig.rateLimit);
@@ -85,13 +124,23 @@ export class TracerNestLogger {
     this.ttlManager = new TTLManager({
       config: effectiveConfig.ttl,
       ringBuffer: this.ringBuffer,
-      sqlStore: this.sqlStore
+      sqlStore: this.sqlStore,
+      maxPersistedLogs: effectiveConfig.maxPersistedLogs
     });
 
     // 4. HTTP Application Request/Response Interceptor
-    let basePath = effectiveConfig.path || DEFAULT_BASE_PATH;
+    let basePath = effectiveConfig.path || effectiveConfig.basePath || DEFAULT_BASE_PATH;
     if (!basePath.startsWith('/')) basePath = '/' + basePath;
     if (basePath.endsWith('/') && basePath.length > 1) basePath = basePath.slice(0, -1);
+    this.basePath = basePath;
+
+    let publicPath = effectiveConfig.publicPath;
+    if (!publicPath && effectiveConfig.apiPrefix) {
+      const pfx = effectiveConfig.apiPrefix.startsWith('/') ? effectiveConfig.apiPrefix : '/' + effectiveConfig.apiPrefix;
+      const cleanPfx = pfx.replace(/\/+$/, '');
+      publicPath = `${cleanPfx}/${basePath.replace(/^\/+/, '')}`;
+    }
+    this.publicPath = publicPath || basePath;
 
     this.httpLogger = new HttpLogger({
       ringBuffer: this.ringBuffer,
@@ -174,20 +223,7 @@ export class TracerNestLogger {
         return handlerMiddleware(req, res, next);
       }
 
-      const expressBaseUrl = (req as any).baseUrl || '';
-      const originalUrl = (req as any).originalUrl || req.url || '/';
-      const url = req.url || '/';
-
-      let basePath = this.config.path || '/logvault';
-      if (!basePath.startsWith('/')) basePath = '/' + basePath;
-      if (basePath.endsWith('/') && basePath.length > 1) basePath = basePath.slice(0, -1);
-
-      const isLogVaultRoute =
-        (expressBaseUrl === basePath || expressBaseUrl.endsWith(basePath)) ||
-        (url === basePath || url.startsWith(basePath + '/') || url.startsWith(basePath + '?')) ||
-        (originalUrl === basePath || originalUrl.startsWith(basePath + '/') || originalUrl.startsWith(basePath + '?'));
-
-      if (isLogVaultRoute) {
+      if (this.httpHandler.isMatch(req)) {
         return handlerMiddleware(req, res, next);
       }
 

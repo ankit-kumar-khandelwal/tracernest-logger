@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.0] - 2026-11-20
+
+### Reverse Proxy & Gateway Tolerance
+- **Automatic Browser Path Detection (`window.location.pathname`):** The dashboard frontend now automatically detects the URL path used by the browser. When TracerNest is proxied behind Nginx rules with path stripping (e.g., `location /api/ { proxy_pass http://localhost:3000/; }`), all client API calls automatically include the `/api` prefix so they route through Nginx without needing special Nginx server blocks.
+- **Multi-Route & Candidate Path Matching:** TracerNest middleware concurrently recognizes both stripped routes (`/tracenest` / `/tracernest`) and prefixed routes (`/api/tracenest` / `/api/tracernest`), allowing seamless handling whether Nginx rewrites the path or forwards it verbatim.
+- **Public & Internal Path Decoupling (`publicPath` & `apiPrefix`):** Added optional `publicPath` and `apiPrefix` config options to explicitly declare external gateway paths while keeping internal Node.js routes completely standard.
+- **Typo-Tolerant Spelling Aliases:** Automatically accepts both `tracernest` and `tracenest` spellings across all HTTP routes and internal logger exclusions.
+- **Origin-Wide Session Cookie (`Path=/`):** Configured session cookies to root path (`Path=/`) to ensure authentication remains valid regardless of proxy prefix rewrites.
+
+## [1.7.8] - 2026-11-20
+
+### Security & Payload Protection
+- **Initial Administrator Auto-Provisioning (`initialAdmin`):** Added `initialAdmin: { username, password }` configuration parameter and environment variables (`TRACERNEST_ADMIN_USERNAME`, `TRACERNEST_ADMIN_PASSWORD`) to automatically provision the root administrator on container startup without requiring interactive web setup.
+- **Web Setup Route Lock (`disableSetupApi`):** Added `disableSetupApi: boolean` parameter to disable `POST /api/auth/setup` (returns 403 Forbidden) for hardened production environments behind reverse proxies.
+- **Default AES-256-GCM HTTP Payload Encryption:** Activated payload encryption by default whenever any master encryption key exists (`userEncryptionKey || this.secret`), ensuring intercepted request bodies and response bodies are securely encrypted with AES-256-GCM out of the box without requiring manual `encryptPayloads: true` flags. Added safe error logging to prevent silent payload drop.
+- **Dual Stream Interception (`req.on` & `req.addListener`):** Monkey-patched both `req.on` and `req.addListener` to guarantee streaming request body capture regardless of middleware registration order or framework stream consumer.
+- **GET/HEAD Empty Body Filter:** Filtered out synthetic empty object envelopes on body-less GET/HEAD requests to keep telemetry logs clean.
+
+### Resilience & Docker Support
+- **Container Volume Write Diagnostics:** Enhanced `POST /api/auth/setup` with actionable error diagnostics for SQLite permission failures (`SQLITE_READONLY`, `EACCES`), providing direct operational guidance for Docker containers running under non-root users (`node:node`) or read-only volume mounts.
+
+### Supply-Chain Hardening
+- **Zero-Dependency Demo & Lockfile Pruning:** Replaced legacy Express demo with pure Node.js native `node:http`, completely purged `express` from `devDependencies`, and pruned `package-lock.json` down to 55 lines, resolving Socket.dev supply chain warnings (`eval`, network access, and overrides) to zero.
+
 ## [1.7.7] - 2026-11-20
 
 ### Security & Supply-Chain Hardening

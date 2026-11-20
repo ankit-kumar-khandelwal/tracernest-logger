@@ -134,9 +134,9 @@ test('Integration: HTTP Request/Response JSON logging, TTL rules & Admin Setup',
       });
     });
 
-    // 3. Query logs to verify HTTP request/response JSON was captured and embedded!
+    // 3. Query logs with ?decrypt=true to verify HTTP request/response JSON was captured and decrypted
     const mockQueryLogs = createMockReqRes({
-      url: '/logvault/api/logs?source=http',
+      url: '/logvault/api/logs?source=http&decrypt=true',
       headers: { authorization: `Bearer ${token}` }
     });
     await vault.handleRequest(mockQueryLogs.req, mockQueryLogs.res);
@@ -2054,6 +2054,579 @@ test('Integration: Request & Response Payload AES-256-GCM Encryption with Initia
   } finally {
     tracer.stop();
     if (existsSync(testDataDir)) rmSync(testDataDir, { recursive: true, force: true });
+  }
+});
+
+test('Integration: Auto-provision Initial Administrator via initialAdmin Config & disableSetupApi', async () => {
+  const testDataDir = './test_data_init_admin_' + Date.now();
+
+  const tracer = new TracerNestLogger({
+    path: '/tracernest',
+    dataDir: testDataDir,
+    initialAdmin: {
+      username: 'preseededadmin',
+      password: 'PreSeededPassword123!'
+    },
+    disableSetupApi: true
+  });
+
+  try {
+    // 1. Verify GET /api/auth/status reports initialized: true and setupDisabled: true
+    const mockStatus = createMockReqRes({
+      method: 'GET',
+      url: '/tracernest/api/auth/status'
+    });
+    await tracer.handleRequest(mockStatus.req, mockStatus.res);
+    const statusRes = mockStatus.getResponse();
+    assert.strictEqual(statusRes.statusCode, 200);
+    assert.strictEqual(statusRes.json().initialized, true, 'Database must be initialized via initialAdmin');
+    assert.strictEqual(statusRes.json().setupDisabled, true, 'setupDisabled must be true');
+
+    // 2. Verify POST /api/auth/setup is blocked with 403 Forbidden
+    const mockSetup = createMockReqRes({
+      method: 'POST',
+      url: '/tracernest/api/auth/setup',
+      headers: { 'content-type': 'application/json' },
+      body: { username: 'attacker', password: 'HackPassword123!' }
+    });
+    await tracer.handleRequest(mockSetup.req, mockSetup.res);
+    const setupRes = mockSetup.getResponse();
+    assert.strictEqual(setupRes.statusCode, 403, 'POST /api/auth/setup must return 403 when disableSetupApi is true');
+
+    // 3. Verify the preseeded admin can login successfully
+    const mockLogin = createMockReqRes({
+      method: 'POST',
+      url: '/tracernest/api/auth/login',
+      headers: { 'content-type': 'application/json' },
+      body: { username: 'preseededadmin', password: 'PreSeededPassword123!' }
+    });
+    await tracer.handleRequest(mockLogin.req, mockLogin.res);
+    const loginRes = mockLogin.getResponse();
+    assert.strictEqual(loginRes.statusCode, 200, 'Pre-seeded admin must be able to log in');
+    assert.ok(loginRes.json().token);
+    assert.strictEqual(loginRes.json().user.username, 'preseededadmin');
+    assert.strictEqual(loginRes.json().user.role, 'admin');
+
+  } finally {
+    tracer.stop();
+    if (existsSync(testDataDir)) rmSync(testDataDir, { recursive: true, force: true });
+  }
+});
+
+test('Integration: Reverse Proxy Prefix Stripping, Dual Route Matching & Spelling Aliases', async () => {
+  const testDataDir = './test_data_proxy_' + Date.now();
+
+  const tracer = new TracerNestLogger({
+    path: '/tracenest', // Notice without 'r'
+    apiPrefix: '/api',  // External gateway prefix
+    dataDir: testDataDir
+  });
+
+  try {
+    // 1. Check candidate paths: must include /api/tracenest, /api/tracernest, /tracenest, /tracernest
+    const candidates = tracer.httpHandler.getCandidateBasePaths();
+    assert.ok(candidates.includes('/api/tracenest'), 'Must include /api/tracenest');
+    assert.ok(candidates.includes('/api/tracernest'), 'Must include /api/tracernest');
+    assert.ok(candidates.includes('/tracenest'), 'Must include /tracenest');
+    assert.ok(candidates.includes('/tracernest'), 'Must include /tracernest');
+
+    // 2. Request through Nginx that stripped /api/ (Node receives /tracenest/api/auth/status)
+    const mockStripped = createMockReqRes({
+      method: 'GET',
+      url: '/tracenest/api/auth/status'
+    });
+    assert.strictEqual(tracer.httpHandler.isMatch(mockStripped.req), true);
+    await tracer.handleRequest(mockStripped.req, mockStripped.res);
+    assert.strictEqual(mockStripped.getResponse().statusCode, 200);
+
+    // 3. Request through proxy preserving /api/ (Node receives /api/tracenest/api/auth/status)
+    const mockUnstripped = createMockReqRes({
+      method: 'GET',
+      url: '/api/tracenest/api/auth/status'
+    });
+    assert.strictEqual(tracer.httpHandler.isMatch(mockUnstripped.req), true);
+    await tracer.handleRequest(mockUnstripped.req, mockUnstripped.res);
+    assert.strictEqual(mockUnstripped.getResponse().statusCode, 200);
+
+    // 4. Request using 'tracernest' spelling (Node receives /tracernest/api/auth/status)
+    const mockAlternate = createMockReqRes({
+      method: 'GET',
+      url: '/tracernest/api/auth/status'
+    });
+    assert.strictEqual(tracer.httpHandler.isMatch(mockAlternate.req), true);
+    await tracer.handleRequest(mockAlternate.req, mockAlternate.res);
+    assert.strictEqual(mockAlternate.getResponse().statusCode, 200);
+
+    // 5. Dashboard HTML must include automatic BASE_PATH detection
+    const mockHtml = createMockReqRes({
+      method: 'GET',
+      url: '/tracenest'
+    });
+    await tracer.handleRequest(mockHtml.req, mockHtml.res);
+    const htmlRes = mockHtml.getResponse();
+    assert.strictEqual(htmlRes.statusCode, 200);
+    assert.ok(htmlRes.body.includes('window.location.pathname'));
+    assert.ok(htmlRes.body.includes('BASE_PATH'));
+  } finally {
+    tracer.stop();
+    if (existsSync(testDataDir)) rmSync(testDataDir, { recursive: true, force: true });
+  }
+});
+
+test('Integration: List View Payload Decryption & Enhanced Full Inspect Log Modal UI', async () => {
+  const html = getDashboardHtml('/tracenest', 'TracerNest Console');
+
+  // 1. Verify absence of undefined allLogs reference in client script
+  assert.ok(!html.includes('allLogs.find'), 'Must not reference undefined allLogs in script');
+  assert.ok(html.includes('logsCache.find(l => l.id === logId)'), 'Must look up logs from logsCache');
+
+  // 2. Verify list view decryption capabilities in both API view and standard log drawer
+  assert.ok(html.includes('isPayloadEncrypted'), 'Must define isPayloadEncrypted helper');
+  assert.ok(html.includes('extractEncryptedPayload'), 'Must define extractEncryptedPayload helper');
+  assert.ok(html.includes('decryptPayloadInCard'), 'Must define decryptPayloadInCard function');
+  assert.ok(html.includes('data-enc-badge'), 'Must support dynamic encryption badge tracking in list view');
+
+  // 3. Verify enhanced Full Inspect Log Modal elements and modern UI structure
+  assert.ok(html.includes('Full Inspect Log'), 'Modal title must be Full Inspect Log');
+  assert.ok(html.includes('id="lmHttpBanner"'), 'Must have dedicated HTTP summary banner');
+  assert.ok(html.includes('id="lmHttpBannerMethod"'), 'Must display HTTP method in banner');
+  assert.ok(html.includes('id="lmHttpBannerStatus"'), 'Must display HTTP status code in banner');
+  assert.ok(html.includes('id="lmHttpBannerUrl"'), 'Must display full HTTP path/URL in banner');
+  assert.ok(html.includes('id="lmHttpBannerLatency"'), 'Must display latency pill in banner');
+  assert.ok(html.includes('id="lmHttpBannerIp"'), 'Must display client IP pill in banner');
+
+  // 4. Verify interactive modal tabs
+  assert.ok(html.includes('id="lmTabNav"'), 'Must contain modal tab navigation');
+  assert.ok(html.includes('id="lmTabBtnPayloads"'), 'Must contain Payloads tab button');
+  assert.ok(html.includes('id="lmTabBtnHeaders"'), 'Must contain HTTP Headers tab button');
+  assert.ok(html.includes('id="lmTabBtnDetails"'), 'Must contain Log Details tab button');
+  assert.ok(html.includes('id="lmTabBtnRaw"'), 'Must contain Raw JSON tab button');
+  assert.ok(html.includes('switchModalTab'), 'Must define switchModalTab function');
+
+  // 5. Verify payload cards and decrypt button in modal
+  assert.ok(html.includes('modal-payload-grid'), 'Must use responsive modal payload grid');
+  assert.ok(html.includes('modal-code-viewer'), 'Must use spacious dark monospace code viewer');
+  assert.ok(html.includes('id="btnDecryptModalReq"'), 'Must have request payload decrypt button');
+  assert.ok(html.includes('id="btnDecryptModalRes"'), 'Must have response payload decrypt button');
+  assert.ok(html.includes('id="lmHeadersContainer"'), 'Must have headers inspector container');
+
+  // 6. Verify full script compiles cleanly in V8 engine without any syntax errors
+  const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
+  assert.ok(scriptMatch, 'Must contain <script> tag');
+  assert.doesNotThrow(() => {
+    new vm.Script(scriptMatch[1]);
+  }, 'Dashboard client script with list view decryption and enhanced modal must compile cleanly in V8');
+});
+
+test('Integration: Persistent Terminal and HTTP Logs Across Server Restarts', async () => {
+  const testDataDir = './test_persist_logs_' + Date.now();
+  if (existsSync(testDataDir)) rmSync(testDataDir, { recursive: true, force: true });
+
+  try {
+    // 1. Initial server run: start logger instance
+    const tracer1 = new TracerNestLogger({
+      dataDir: testDataDir,
+      persistLogs: true,
+      interceptStdout: false,
+      interceptStderr: false,
+      interceptHttp: false
+    });
+
+    tracer1.ringBuffer.push({
+      id: 'test_term_1',
+      timestamp: Date.now() - 5000,
+      level: 'info',
+      source: 'stdout',
+      message: 'Server starting on port 3000',
+      raw: 'Server starting on port 3000'
+    });
+
+    tracer1.ringBuffer.push({
+      id: 'test_http_1',
+      timestamp: Date.now() - 2000,
+      level: 'info',
+      source: 'http',
+      message: 'HTTP [POST] /api/v1/login - 200 (15ms)',
+      raw: 'HTTP [POST] /api/v1/login - 200 (15ms)',
+      metadata: {
+        http: {
+          method: 'POST',
+          url: '/api/v1/login',
+          path: '/api/v1/login',
+          statusCode: 200,
+          durationMs: 15,
+          clientIp: '127.0.0.1'
+        }
+      }
+    });
+
+    assert.strictEqual(tracer1.ringBuffer.size(), 2, 'First instance should have 2 logs in memory');
+    assert.strictEqual(tracer1.sqlStore.getLogsCount(), 2, 'First instance should have 2 logs in database');
+
+    tracer1.stop();
+    tracer1.sqlStore.close();
+
+    // 2. Simulate server restart: new instance pointing to same persistent database
+    const tracer2 = new TracerNestLogger({
+      dataDir: testDataDir,
+      persistLogs: true,
+      interceptStdout: false,
+      interceptStderr: false,
+      interceptHttp: false
+    });
+
+    assert.strictEqual(tracer2.ringBuffer.size(), 2, 'Second instance must reload both persisted logs into ringBuffer upon restart');
+    const logs = tracer2.ringBuffer.toArray();
+    assert.strictEqual(logs[0].id, 'test_term_1');
+    assert.strictEqual(logs[0].message, 'Server starting on port 3000');
+    assert.strictEqual(logs[0].source, 'stdout');
+    assert.strictEqual(logs[1].id, 'test_http_1');
+    assert.strictEqual(logs[1].metadata?.http?.url, '/api/v1/login');
+    assert.strictEqual(logs[1].source, 'http');
+
+    // 3. New logs emitted on restarted server are appended and persisted
+    tracer2.ringBuffer.push({
+      id: 'test_term_2',
+      timestamp: Date.now(),
+      level: 'warn',
+      source: 'stderr',
+      message: 'High connection pool usage detected',
+      raw: 'High connection pool usage detected'
+    });
+
+    assert.strictEqual(tracer2.ringBuffer.size(), 3, 'Must contain 3 logs after appending new entry');
+    assert.strictEqual(tracer2.sqlStore.getLogsCount(), 3, 'Database must contain 3 persisted logs');
+
+    // 4. Verify TTL lifecycle: Logs must remain in database UNTIL TTL is completed
+    const now = Date.now();
+    tracer2.ringBuffer.push({
+      id: 'test_ttl_short',
+      timestamp: now,
+      expiresAt: now + 50, // TTL completes in 50ms
+      level: 'debug',
+      source: 'api',
+      message: 'Short-lived debug log',
+      raw: 'Short-lived debug log'
+    });
+
+    tracer2.ringBuffer.push({
+      id: 'test_ttl_long',
+      timestamp: now,
+      expiresAt: now + 3600000, // TTL completes in 1 hour
+      level: 'info',
+      source: 'stdout',
+      message: 'Long-lived info log',
+      raw: 'Long-lived info log'
+    });
+
+    // Before 50ms: TTL is NOT completed -> both logs must remain in database
+    tracer2.ttlManager.sweep();
+    assert.strictEqual(tracer2.sqlStore.getActiveLogsCount(now), 5, 'All 5 logs must remain in DB before TTL completes');
+    const queryBefore = tracer2.ringBuffer.query({ limit: 100 }, now);
+    assert.strictEqual(queryBefore.total, 5, 'All active logs must be queryable from DB');
+
+    // Wait 70ms for test_ttl_short TTL to complete
+    await new Promise(r => setTimeout(r, 70));
+
+    // After 70ms: test_ttl_short TTL is completed -> swept and purged
+    const swept = tracer2.ttlManager.sweep();
+    assert.ok(swept >= 1, 'Should have purged at least the expired log');
+    assert.strictEqual(tracer2.sqlStore.getActiveLogsCount(), 4, 'Only 4 unexpired logs must remain in DB');
+    const queryAfter = tracer2.ringBuffer.query({ limit: 100 });
+    assert.strictEqual(queryAfter.total, 4, 'Only unexpired logs returned from DB');
+    assert.ok(queryAfter.logs.some(l => l.id === 'test_ttl_long'), 'Log with incomplete TTL must still be in DB');
+    assert.ok(!queryAfter.logs.some(l => l.id === 'test_ttl_short'), 'Log with completed TTL must be purged from DB');
+
+    // 5. Test ringBuffer.clear() clears database as well
+    tracer2.ringBuffer.clear();
+    assert.strictEqual(tracer2.ringBuffer.size(), 0);
+    assert.strictEqual(tracer2.sqlStore.getLogsCount(), 0);
+
+    tracer2.stop();
+    tracer2.sqlStore.close();
+  } finally {
+    if (existsSync(testDataDir)) rmSync(testDataDir, { recursive: true, force: true });
+  }
+});
+
+test('Integration: SQLite to MySQL Auto-Migration, Schema Updates, SQLite Cleanup & Master Key Preservation with Custom Folder', async () => {
+  const customInitFolder = './test_migration_folder_' + Date.now();
+  if (existsSync(customInitFolder)) rmSync(customInitFolder, { recursive: true, force: true });
+
+  try {
+    // 1. Initial run: Application starts in SQLite mode inside a custom folder
+    const sqliteInstance = new TracerNestLogger({
+      folder: customInitFolder,
+      dialect: 'sqlite',
+      interceptStdout: false,
+      interceptStderr: false,
+      interceptHttp: false
+    });
+
+    // Seed SQLite data: Users, Alerts, Excluded Routes, Telemetry Logs
+    sqliteInstance.userStore.createUser('migrated_admin', 'Pass1234!', 'admin');
+    sqliteInstance.sqlStore.saveAlertConfig('email', true, 'error', {
+      smtpHost: 'smtp.sendgrid.net',
+      smtpPort: 587,
+      to: 'ops@acme.corp'
+    });
+    sqliteInstance.sqlStore.saveExcludedRoutes([
+      { id: 'ex_1', path: '/api/v1/health', enabled: true, createdAt: Date.now() }
+    ]);
+    sqliteInstance.ringBuffer.push({
+      id: 'log_sqlite_migrated',
+      timestamp: Date.now() - 1000,
+      level: 'warn',
+      source: 'stdout',
+      message: 'Initial startup log in SQLite mode',
+      raw: 'Initial startup log in SQLite mode'
+    });
+
+    // Verify all files were created in customInitFolder
+    const sqliteFilePath = `${customInitFolder}/tracernest-logger.sqlite`;
+    const sqlFilePath = `${customInitFolder}/tracernest-logger.sql`;
+    const masterKeyPath = `${customInitFolder}/.master.key`;
+
+    assert.ok(existsSync(sqliteFilePath), 'SQLite database file should exist before migration');
+    assert.ok(existsSync(masterKeyPath), '.master.key must exist in custom initialization folder');
+    const originalMasterKey = readFileSync(masterKeyPath, 'utf8').trim();
+    assert.ok(originalMasterKey.length >= 16, 'Original master key must be a valid secret');
+
+    // Stop SQLite instance and close db so handles are released
+    sqliteInstance.stop();
+    sqliteInstance.sqlStore.close();
+
+    // 2. Developer updates initialization in app.js from SQLite to MySQL
+    const mysqlStorage: Record<string, any[]> = {
+      users: [],
+      alert_configs: [],
+      audit_logs: [],
+      logs: [],
+      system_meta: []
+    };
+    const executedQueries: string[] = [];
+
+    const mockPool = {
+      query: async (sql: string, params?: any[]) => {
+        executedQueries.push(sql);
+
+        // Normalize SQL
+        const cleanSql = sql.replace(/\s+/g, ' ').trim();
+
+        if (cleanSql.includes('INSERT INTO') && cleanSql.includes('users') || cleanSql.includes('REPLACE INTO') && cleanSql.includes('users')) {
+          if (params) {
+            const [id, username, password_hash, salt, role, created_at, last_login_at, must_change_password, token_version] = params;
+            mysqlStorage.users = mysqlStorage.users.filter(u => u.id !== id && u.username !== username);
+            mysqlStorage.users.push({ id, username, password_hash, salt, role, created_at, last_login_at, must_change_password, token_version });
+          }
+          return [[]];
+        }
+
+        if (cleanSql.includes('INSERT INTO') && cleanSql.includes('alert_configs') || cleanSql.includes('REPLACE INTO') && cleanSql.includes('alert_configs')) {
+          if (params) {
+            const [id, channel, enabled, level_threshold, ciphertext, iv, auth_tag, salt, created_at, updated_at] = params;
+            mysqlStorage.alert_configs = mysqlStorage.alert_configs.filter(a => a.channel !== channel);
+            mysqlStorage.alert_configs.push({ id, channel, enabled, level_threshold, ciphertext, iv, auth_tag, salt, created_at, updated_at });
+          }
+          return [[]];
+        }
+
+        if (cleanSql.includes('INSERT INTO') && cleanSql.includes('logs') || cleanSql.includes('REPLACE INTO') && cleanSql.includes('logs')) {
+          if (params) {
+            const [id, timestamp, expires_at, level, source, message, raw, metadata, tags] = params;
+            mysqlStorage.logs = mysqlStorage.logs.filter(l => l.id !== id);
+            mysqlStorage.logs.push({ id, timestamp, expires_at, level, source, message, raw, metadata, tags });
+          }
+          return [[]];
+        }
+
+        if (cleanSql.includes('INSERT INTO') && cleanSql.includes('system_meta') || cleanSql.includes('REPLACE INTO') && cleanSql.includes('system_meta')) {
+          if (params) {
+            const [key, value] = params;
+            mysqlStorage.system_meta = mysqlStorage.system_meta.filter(m => m.key !== key);
+            mysqlStorage.system_meta.push({ key, value });
+          }
+          return [[]];
+        }
+
+        if (cleanSql.includes('SELECT * FROM') && cleanSql.includes('users')) {
+          return [mysqlStorage.users];
+        }
+
+        if (cleanSql.includes('SELECT * FROM') && cleanSql.includes('alert_configs')) {
+          return [mysqlStorage.alert_configs];
+        }
+
+        if (cleanSql.includes('SELECT * FROM') && cleanSql.includes('system_meta')) {
+          return [mysqlStorage.system_meta];
+        }
+
+        if (cleanSql.includes('FROM') && cleanSql.includes('logs')) {
+          return [mysqlStorage.logs];
+        }
+
+        return [[]];
+      }
+    };
+
+    const mysqlInstance = new TracerNestLogger({
+      folder: customInitFolder,
+      dialect: 'mysql',
+      mysql: { pool: mockPool },
+      interceptStdout: false,
+      interceptStderr: false,
+      interceptHttp: false
+    });
+
+    // Wait for asynchronous MySQL initialization and SQLite-to-MySQL auto-migration to complete
+    await mysqlInstance.sqlStore.initMySql();
+
+    // 3. Verify SQLite data was migrated into MySQL
+    assert.strictEqual(mysqlStorage.users.length, 1, 'User must be migrated to MySQL');
+    assert.strictEqual(mysqlStorage.users[0].username, 'migrated_admin');
+    assert.strictEqual(mysqlStorage.alert_configs.length, 1, 'Alert config must be migrated to MySQL');
+    assert.strictEqual(mysqlStorage.alert_configs[0].channel, 'email');
+    assert.strictEqual(mysqlStorage.logs.length, 1, 'Log entry must be migrated to MySQL');
+    assert.strictEqual(mysqlStorage.logs[0].id, 'log_sqlite_migrated');
+
+    // 4. Verify SQLite database & SQL mirror files are deleted
+    assert.strictEqual(existsSync(sqliteFilePath), false, 'SQLite database file (.sqlite) must be deleted after migration');
+    assert.strictEqual(existsSync(sqlFilePath), false, 'Synchronized SQL file (.sql) must be deleted after migration');
+
+    // 5. Verify .master.key is strictly PRESERVED and untouched
+    assert.ok(existsSync(masterKeyPath), '.master.key file MUST be preserved after migration');
+    const preservedMasterKey = readFileSync(masterKeyPath, 'utf8').trim();
+    assert.strictEqual(preservedMasterKey, originalMasterKey, 'Preserved master key must match original exactly');
+
+    // 6. Verify fast local in-memory tier is populated from MySQL for synchronous reads
+    const syncedUser = mysqlInstance.sqlStore.getUserByUsername('migrated_admin');
+    assert.ok(syncedUser, 'Migrated user must be accessible via synchronous get');
+    assert.strictEqual(syncedUser?.username, 'migrated_admin');
+
+    const syncedAlert = mysqlInstance.sqlStore.getAlertConfig('email');
+    assert.ok(syncedAlert, 'Migrated alert config must be decryptable and accessible');
+    assert.strictEqual(syncedAlert?.channel, 'email');
+    assert.strictEqual(syncedAlert?.settings?.smtpHost, 'smtp.sendgrid.net');
+
+    // 7. Verify newly installed package schema updates (ALTER TABLE ADD COLUMN) were executed
+    const alterUserQueries = executedQueries.filter(q => q.includes('ALTER TABLE') && q.includes('ADD COLUMN'));
+    assert.ok(alterUserQueries.length >= 4, 'Schema update queries (ALTER TABLE ADD COLUMN) must be executed');
+
+    mysqlInstance.stop();
+    mysqlInstance.sqlStore.close();
+  } finally {
+    if (existsSync(customInitFolder)) rmSync(customInitFolder, { recursive: true, force: true });
+  }
+});
+
+test('Integration: Laravel 13 Telemetry Ingestion API (POST /api/logs/ingest)', async () => {
+  const testDir = './test_laravel_ingest_' + Date.now();
+  if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+
+  const masterSecret = '0123456789abcdef0123456789abcdef';
+  const tracer = new TracerNestLogger({
+    folder: testDir,
+    masterKey: masterSecret,
+    interceptStdout: false,
+    interceptStderr: false,
+    interceptHttp: false
+  });
+
+  try {
+    // 1. Ingestion without auth -> 401
+    const unauthReq = createMockReqRes({
+      method: 'POST',
+      url: '/tracernest-logger/api/logs/ingest',
+      body: { message: 'Attempt unauthorized log' }
+    });
+    await tracer.handleRequest(unauthReq.req, unauthReq.res);
+    assert.strictEqual(unauthReq.getResponse().statusCode, 401);
+
+    // 2. Ingestion with valid x-tracernest-key header -> 200
+    const laravelReq = createMockReqRes({
+      method: 'POST',
+      url: '/tracernest-logger/api/logs/ingest',
+      headers: {
+        'x-tracernest-key': masterSecret
+      },
+      body: {
+        level: 'error',
+        source: 'laravel',
+        message: 'HTTP [POST] /api/v1/orders - 500 (45ms)',
+        metadata: {
+          framework: 'laravel',
+          version: '13',
+          http: {
+            method: 'POST',
+            url: '/api/v1/orders',
+            statusCode: 500,
+            durationMs: 45,
+            clientIp: '198.51.100.22',
+            requestBody: { items: [{ id: 'item_1', qty: 2 }] },
+            responseBody: { error: 'Payment gateway timeout' }
+          }
+        },
+        tags: ['laravel', 'laravel13', 'orders']
+      }
+    });
+
+    await tracer.handleRequest(laravelReq.req, laravelReq.res);
+    assert.strictEqual(laravelReq.getResponse().statusCode, 200);
+    const ingestRes = laravelReq.getResponse().json();
+    assert.strictEqual(ingestRes.success, true);
+    assert.strictEqual(ingestRes.count, 1);
+
+    // 3. Batch Ingestion of Laravel Monolog logs
+    const batchReq = createMockReqRes({
+      method: 'POST',
+      url: '/tracernest-logger/api/logs/ingest',
+      headers: {
+        'authorization': `Bearer ${masterSecret}`
+      },
+      body: {
+        logs: [
+          {
+            level: 'info',
+            source: 'laravel',
+            message: 'Queue worker job processed: SendOrderConfirmationEmail',
+            metadata: { framework: 'laravel', version: '13', queue: 'default' },
+            tags: ['laravel', 'queue']
+          },
+          {
+            level: 'warn',
+            source: 'laravel',
+            message: 'Redis cache hit ratio below 80%',
+            metadata: { framework: 'laravel', version: '13', cache: 'redis' },
+            tags: ['laravel', 'cache']
+          }
+        ]
+      }
+    });
+
+    await tracer.handleRequest(batchReq.req, batchReq.res);
+    assert.strictEqual(batchReq.getResponse().statusCode, 200);
+    const batchRes = batchReq.getResponse().json();
+    assert.strictEqual(batchRes.count, 2);
+
+    // 4. Verify ringBuffer and query API contain the ingested Laravel logs
+    const queried = tracer.ringBuffer.query({ source: 'laravel' });
+    assert.strictEqual(queried.total, 3, 'All 3 Laravel logs should be stored and queryable');
+    const orderLog = queried.logs.find(l => l.message.includes('/api/v1/orders'));
+    assert.ok(orderLog, 'Laravel HTTP error log must exist in ring buffer');
+    assert.strictEqual(orderLog?.level, 'error');
+    assert.strictEqual(orderLog?.metadata?.framework, 'laravel');
+    assert.strictEqual(orderLog?.metadata?.version, '13');
+
+    // Verify payload encryption on request/response body
+    assert.ok(orderLog?.metadata?.http?.requestBody?.encrypted || orderLog?.metadata?.http?.requestBody?.__encrypted, 'Payload must be encrypted with AES-256-GCM');
+
+    // 5. Verify database persistence
+    assert.strictEqual(tracer.sqlStore.getLogsCount(), 3, 'Logs must be persisted to SQL store');
+
+    tracer.stop();
+    tracer.sqlStore.close();
+  } finally {
+    if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
   }
 });
 

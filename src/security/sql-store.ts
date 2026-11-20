@@ -1,4 +1,4 @@
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
@@ -21,9 +21,10 @@ if (typeof process !== 'undefined' && typeof process.emitWarning === 'function')
 
 // Safely load native DatabaseSync constructor with warning suppressed
 const NativeDatabaseSync = require('node:sqlite').DatabaseSync as typeof DatabaseSync;
-import { AuditLogEntry, DatabaseDialect, ExcludedRouteRule, MySqlConfig, Role, User, UserProfile } from '../types';
+import { AuditLogEntry, DatabaseDialect, ExcludedRouteRule, LogEntry, LogLevel, LogQueryOptions, LogQueryResult, MySqlConfig, Role, TTLRule, User, UserProfile } from '../types';
 import { FastCrypto, EncryptedPayload } from './fast-crypto';
 import { CryptoSecurity } from './crypto';
+import { SafeRegex } from './safe-regex';
 
 export interface StoredAlertConfig {
   id: string;
@@ -37,6 +38,9 @@ export interface StoredAlertConfig {
 
 export interface SqlStoreOptions {
   dataDir?: string;
+  storageDir?: string;
+  folder?: string;
+  initFolder?: string;
   sqlFilePath?: string;
   sqliteFilePath?: string;
   keyFilePath?: string;
@@ -59,13 +63,21 @@ export class SqlStore {
   public readonly tableAlerts: string;
   public readonly tableAudit: string;
   public readonly tableMeta: string;
+  public readonly tableLogs: string;
+  private stmtInsertLog?: StatementSync;
+  private initMySqlPromise: Promise<void> | null = null;
 
   constructor(options?: SqlStoreOptions) {
-    const dataDir = options?.dataDir || (existsSync('./.tracernest') ? './.tracernest' : (existsSync('./tracernest') ? './tracernest' : './.tracernest'));
+    const userSpecifiedDir = options?.dataDir || options?.storageDir || options?.folder || options?.initFolder;
+    const dataDir =
+      userSpecifiedDir ||
+      (existsSync('./.tracernest') ? './.tracernest' : (existsSync('./tracernest') ? './tracernest' : './.tracernest'));
 
     this.sqliteFilePath =
       options?.sqliteFilePath ||
-      (existsSync(`${dataDir}/tracernest-logger.sqlite`)
+      (userSpecifiedDir
+        ? `${dataDir}/tracernest-logger.sqlite`
+        : existsSync(`${dataDir}/tracernest-logger.sqlite`)
         ? `${dataDir}/tracernest-logger.sqlite`
         : existsSync('./tracernest/tracernest-logger.sqlite')
         ? './tracernest/tracernest-logger.sqlite'
@@ -79,7 +91,9 @@ export class SqlStore {
 
     this.sqlFilePath =
       options?.sqlFilePath ||
-      (existsSync(`${dataDir}/tracernest-logger.sql`)
+      (userSpecifiedDir
+        ? `${dataDir}/tracernest-logger.sql`
+        : existsSync(`${dataDir}/tracernest-logger.sql`)
         ? `${dataDir}/tracernest-logger.sql`
         : existsSync('./tracernest/tracernest-logger.sql')
         ? './tracernest/tracernest-logger.sql'
@@ -93,7 +107,9 @@ export class SqlStore {
 
     this.keyFilePath =
       options?.keyFilePath ||
-      (existsSync(`${dataDir}/.master.key`)
+      (userSpecifiedDir
+        ? `${dataDir}/.master.key`
+        : existsSync(`${dataDir}/.master.key`)
         ? `${dataDir}/.master.key`
         : existsSync(`${dataDir}/tracernest.key`)
         ? `${dataDir}/tracernest.key`
@@ -109,6 +125,7 @@ export class SqlStore {
     this.tableAlerts = `${this.tablePrefix}alert_configs`;
     this.tableAudit = `${this.tablePrefix}audit_logs`;
     this.tableMeta = `${this.tablePrefix}system_meta`;
+    this.tableLogs = `${this.tablePrefix}logs`;
 
     // Ensure parent directories exist
     const sqliteDir = dirname(this.sqliteFilePath);
@@ -129,9 +146,16 @@ export class SqlStore {
       }
     }
 
+    const sqliteExists = existsSync(this.sqliteFilePath);
+
     // Initialize Native SQLite (used directly or as ultra-fast local tier)
     try {
-      this.db = new NativeDatabaseSync(this.sqliteFilePath);
+      if (this.dialect === 'mysql' && !sqliteExists) {
+        // In MySQL mode without pre-existing SQLite database file, run in-memory tier directly
+        this.db = new NativeDatabaseSync(':memory:');
+      } else {
+        this.db = new NativeDatabaseSync(this.sqliteFilePath);
+      }
       this.initTables();
     } catch (err: any) {
       console.error(`[TracerNest-Logger] ERROR: Failed to initialize SQLite storage at '${this.sqliteFilePath}':`, err?.message || err);
@@ -140,7 +164,7 @@ export class SqlStore {
     }
 
     // If sqlFilePath exists on disk and sqlite is empty, restore data from sql file
-    if (existsSync(this.sqlFilePath) && this.getUserCount() === 0) {
+    if (this.dialect === 'sqlite' && existsSync(this.sqlFilePath) && this.getUserCount() === 0) {
       try {
         const sqlContent = readFileSync(this.sqlFilePath, 'utf8');
         if (sqlContent && sqlContent.trim().length > 0) {
@@ -154,13 +178,13 @@ export class SqlStore {
     // Ensure or retrieve persistent master key for AES-256-GCM encryption
     this.masterKey = this.resolveMasterKey(options?.masterKey);
 
-    // If MySQL is configured, initialize remote tables asynchronously
+    // If MySQL is configured, initialize remote tables & perform SQLite->MySQL auto-migration asynchronously
     if (this.dialect === 'mysql') {
       this.initMySql();
     }
 
-    // Only sync if sql file doesn't exist or database has data
-    if (!existsSync(this.sqlFilePath) || this.getUserCount() > 0) {
+    // Only sync if sql file doesn't exist or database has data (and dialect is SQLite)
+    if (this.dialect === 'sqlite' && (!existsSync(this.sqlFilePath) || this.getUserCount() > 0)) {
       this.syncSqlFile();
     }
   }
@@ -216,6 +240,23 @@ export class SqlStore {
         ip TEXT,
         details TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS ${this.tableLogs} (
+        id TEXT PRIMARY KEY,
+        timestamp INTEGER NOT NULL,
+        expires_at INTEGER,
+        level TEXT NOT NULL,
+        source TEXT NOT NULL,
+        message TEXT NOT NULL,
+        raw TEXT,
+        metadata TEXT,
+        tags TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_${this.tableLogs}_ts ON ${this.tableLogs} (timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableLogs}_level ON ${this.tableLogs} (level);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableLogs}_source ON ${this.tableLogs} (source);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableLogs}_expires ON ${this.tableLogs} (expires_at);
     `);
 
     // Ensure must_change_password and token_version columns exist if upgrading existing database
@@ -224,6 +265,18 @@ export class SqlStore {
     } catch {}
     try {
       this.db.exec(`ALTER TABLE ${this.tableUsers} ADD COLUMN token_version INTEGER DEFAULT 1`);
+    } catch {}
+    try {
+      this.db.exec(`ALTER TABLE ${this.tableLogs} ADD COLUMN expires_at INTEGER`);
+    } catch {}
+    try {
+      this.db.exec(`ALTER TABLE ${this.tableLogs} ADD COLUMN raw TEXT`);
+    } catch {}
+    try {
+      this.db.exec(`ALTER TABLE ${this.tableLogs} ADD COLUMN metadata TEXT`);
+    } catch {}
+    try {
+      this.db.exec(`ALTER TABLE ${this.tableLogs} ADD COLUMN tags TEXT`);
     } catch {}
 
     // 2. Seamless Migration: If legacy unprefixed tables exist in SQLite, copy records into logg_vault_ tables
@@ -251,74 +304,434 @@ export class SqlStore {
     }
   }
 
-  private async initMySql(): Promise<void> {
-    const client = this.mysqlConfig?.pool || this.mysqlConfig?.client;
-    if (!client || typeof client.query !== 'function') return;
+  public async initMySql(): Promise<void> {
+    if (this.initMySqlPromise) {
+      return this.initMySqlPromise;
+    }
 
+    this.initMySqlPromise = (async () => {
+      const client = this.mysqlConfig?.pool || this.mysqlConfig?.client;
+      if (!client || typeof client.query !== 'function') return;
+
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS ${this.tableMeta} (
+            \`key\` VARCHAR(191) PRIMARY KEY,
+            \`value\` MEDIUMTEXT NOT NULL
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS ${this.tableUsers} (
+            id VARCHAR(64) PRIMARY KEY,
+            username VARCHAR(191) UNIQUE NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            salt VARCHAR(64) NOT NULL,
+            role VARCHAR(32) NOT NULL,
+            created_at BIGINT NOT NULL,
+            last_login_at BIGINT NULL,
+            must_change_password TINYINT(1) NOT NULL DEFAULT 0,
+            token_version INT NOT NULL DEFAULT 1
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+
+        // Ensure newly introduced columns exist if upgrading package on an existing MySQL database
+        try {
+          await client.query(`ALTER TABLE ${this.tableUsers} ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0`);
+        } catch {}
+        try {
+          await client.query(`ALTER TABLE ${this.tableUsers} ADD COLUMN token_version INT NOT NULL DEFAULT 1`);
+        } catch {}
+
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS ${this.tableAlerts} (
+            id VARCHAR(64) PRIMARY KEY,
+            channel VARCHAR(32) UNIQUE NOT NULL,
+            enabled TINYINT(1) NOT NULL,
+            level_threshold VARCHAR(32) NOT NULL,
+            ciphertext TEXT NOT NULL,
+            iv VARCHAR(64) NOT NULL,
+            auth_tag VARCHAR(64) NOT NULL,
+            salt VARCHAR(64) NOT NULL,
+            created_at BIGINT NOT NULL,
+            updated_at BIGINT NOT NULL
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS ${this.tableAudit} (
+            id VARCHAR(64) PRIMARY KEY,
+            timestamp BIGINT NOT NULL,
+            user_id VARCHAR(64) NULL,
+            username VARCHAR(191) NULL,
+            action VARCHAR(64) NOT NULL,
+            ip VARCHAR(64) NULL,
+            details TEXT NULL
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS ${this.tableLogs} (
+            id VARCHAR(64) PRIMARY KEY,
+            timestamp BIGINT NOT NULL,
+            expires_at BIGINT NULL,
+            level VARCHAR(16) NOT NULL,
+            source VARCHAR(32) NOT NULL,
+            message TEXT NOT NULL,
+            raw MEDIUMTEXT NULL,
+            metadata MEDIUMTEXT NULL,
+            tags TEXT NULL,
+            INDEX idx_logs_ts (timestamp DESC),
+            INDEX idx_logs_level (level),
+            INDEX idx_logs_source (source),
+            INDEX idx_logs_expires (expires_at)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+
+        // Ensure newly introduced columns exist on logs table if upgrading package
+        try { await client.query(`ALTER TABLE ${this.tableLogs} ADD COLUMN expires_at BIGINT NULL`); } catch {}
+        try { await client.query(`ALTER TABLE ${this.tableLogs} ADD COLUMN raw MEDIUMTEXT NULL`); } catch {}
+        try { await client.query(`ALTER TABLE ${this.tableLogs} ADD COLUMN metadata MEDIUMTEXT NULL`); } catch {}
+        try { await client.query(`ALTER TABLE ${this.tableLogs} ADD COLUMN tags TEXT NULL`); } catch {}
+
+        // 2. Automatic SQLite -> MySQL Migration
+        // If the developer changed initialization from SQLite to MySQL in app.js, auto-migrate all SQLite data to MySQL
+        const sqliteFilePresent = existsSync(this.sqliteFilePath);
+        const hasData = this.hasSqliteDataToMigrate();
+
+        if (sqliteFilePresent || hasData) {
+          if (hasData) {
+            console.log('[TracerNest-Logger] Migrating existing SQLite data to MySQL...');
+            await this.migrateSqliteToMySql(client);
+            console.log('[TracerNest-Logger] SQLite data migrated to MySQL successfully.');
+          }
+
+          // 3. Clean up SQLite database, journals, and SQL dump files, strictly preserving .master.key
+          this.deleteSqliteFilesPreservingKey();
+
+          // 4. Switch local fast tier to in-memory SQLite
+          try {
+            this.db.close();
+          } catch {}
+          this.db = new NativeDatabaseSync(':memory:');
+          this.stmtInsertLog = undefined;
+          this.initTables();
+        }
+
+        // 5. Synchronize local fast tier from MySQL
+        await this.syncFromMySql(client);
+      } catch (err: any) {
+        console.warn('[TracerNest-Logger] Notice: MySQL table initialization:', err?.message || err);
+      }
+    })();
+
+    return this.initMySqlPromise;
+  }
+
+  private hasSqliteDataToMigrate(): boolean {
     try {
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS ${this.tableMeta} (
-          \`key\` VARCHAR(191) PRIMARY KEY,
-          \`value\` TEXT NOT NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+      const u = (this.db.prepare(`SELECT COUNT(*) as count FROM ${this.tableUsers}`).get() as any)?.count || 0;
+      const a = (this.db.prepare(`SELECT COUNT(*) as count FROM ${this.tableAlerts}`).get() as any)?.count || 0;
+      const aud = (this.db.prepare(`SELECT COUNT(*) as count FROM ${this.tableAudit}`).get() as any)?.count || 0;
+      const l = (this.db.prepare(`SELECT COUNT(*) as count FROM ${this.tableLogs}`).get() as any)?.count || 0;
+      const m = (this.db.prepare(`SELECT COUNT(*) as count FROM ${this.tableMeta}`).get() as any)?.count || 0;
+      return (u + a + aud + l + m) > 0;
+    } catch {
+      return false;
+    }
+  }
 
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS ${this.tableMeta} (
-          \`key\` VARCHAR(128) PRIMARY KEY,
-          \`value\` MEDIUMTEXT NOT NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+  private async migrateSqliteToMySql(client: any): Promise<void> {
+    try {
+      // 1. Users
+      const users = this.db.prepare(`SELECT * FROM ${this.tableUsers}`).all() as any[];
+      for (const u of users) {
+        await client.query(`
+          INSERT INTO ${this.tableUsers}
+            (id, username, password_hash, salt, role, created_at, last_login_at, must_change_password, token_version)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            password_hash = VALUES(password_hash),
+            salt = VALUES(salt),
+            role = VALUES(role),
+            last_login_at = VALUES(last_login_at),
+            must_change_password = VALUES(must_change_password),
+            token_version = VALUES(token_version)
+        `, [
+          u.id,
+          u.username,
+          u.password_hash,
+          u.salt,
+          u.role,
+          u.created_at,
+          u.last_login_at ?? null,
+          u.must_change_password ?? 0,
+          u.token_version ?? 1
+        ]);
+      }
 
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS ${this.tableUsers} (
-          id VARCHAR(64) PRIMARY KEY,
-          username VARCHAR(191) UNIQUE NOT NULL,
-          password_hash VARCHAR(255) NOT NULL,
-          salt VARCHAR(64) NOT NULL,
-          role VARCHAR(32) NOT NULL,
-          created_at BIGINT NOT NULL,
-          last_login_at BIGINT NULL,
-          must_change_password TINYINT(1) NOT NULL DEFAULT 0,
-          token_version INT NOT NULL DEFAULT 1
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+      // 2. Alert configurations
+      const alerts = this.db.prepare(`SELECT * FROM ${this.tableAlerts}`).all() as any[];
+      for (const a of alerts) {
+        await client.query(`
+          INSERT INTO ${this.tableAlerts}
+            (id, channel, enabled, level_threshold, ciphertext, iv, auth_tag, salt, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            enabled = VALUES(enabled),
+            level_threshold = VALUES(level_threshold),
+            ciphertext = VALUES(ciphertext),
+            iv = VALUES(iv),
+            auth_tag = VALUES(auth_tag),
+            salt = VALUES(salt),
+            updated_at = VALUES(updated_at)
+        `, [
+          a.id,
+          a.channel,
+          a.enabled,
+          a.level_threshold,
+          a.ciphertext,
+          a.iv,
+          a.auth_tag,
+          a.salt,
+          a.created_at,
+          a.updated_at
+        ]);
+      }
 
-      try {
-        await client.query(`ALTER TABLE ${this.tableUsers} ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0`);
-      } catch {}
-      try {
-        await client.query(`ALTER TABLE ${this.tableUsers} ADD COLUMN token_version INT NOT NULL DEFAULT 1`);
-      } catch {}
+      // 3. Audit logs
+      const audits = this.db.prepare(`SELECT * FROM ${this.tableAudit}`).all() as any[];
+      for (const aud of audits) {
+        await client.query(`
+          INSERT INTO ${this.tableAudit}
+            (id, timestamp, user_id, username, action, ip, details)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            action = VALUES(action),
+            details = VALUES(details)
+        `, [
+          aud.id,
+          aud.timestamp,
+          aud.user_id ?? null,
+          aud.username ?? null,
+          aud.action,
+          aud.ip ?? null,
+          aud.details ?? null
+        ]);
+      }
 
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS ${this.tableAlerts} (
-          id VARCHAR(64) PRIMARY KEY,
-          channel VARCHAR(32) UNIQUE NOT NULL,
-          enabled TINYINT(1) NOT NULL,
-          level_threshold VARCHAR(32) NOT NULL,
-          ciphertext TEXT NOT NULL,
-          iv VARCHAR(64) NOT NULL,
-          auth_tag VARCHAR(64) NOT NULL,
-          salt VARCHAR(64) NOT NULL,
-          created_at BIGINT NOT NULL,
-          updated_at BIGINT NOT NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+      // 4. Telemetry and HTTP logs
+      const logs = this.db.prepare(`SELECT * FROM ${this.tableLogs}`).all() as any[];
+      for (const l of logs) {
+        await client.query(`
+          INSERT INTO ${this.tableLogs}
+            (id, timestamp, expires_at, level, source, message, raw, metadata, tags)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            timestamp = VALUES(timestamp),
+            expires_at = VALUES(expires_at),
+            level = VALUES(level),
+            source = VALUES(source),
+            message = VALUES(message),
+            raw = VALUES(raw),
+            metadata = VALUES(metadata),
+            tags = VALUES(tags)
+        `, [
+          l.id,
+          l.timestamp,
+          l.expires_at ?? null,
+          l.level,
+          l.source,
+          l.message,
+          l.raw ?? null,
+          l.metadata ?? null,
+          l.tags ?? null
+        ]);
+      }
 
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS ${this.tableAudit} (
-          id VARCHAR(64) PRIMARY KEY,
-          timestamp BIGINT NOT NULL,
-          user_id VARCHAR(64) NULL,
-          username VARCHAR(191) NULL,
-          action VARCHAR(64) NOT NULL,
-          ip VARCHAR(64) NULL,
-          details TEXT NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+      // 5. System metadata (excluding master_key)
+      const metas = this.db.prepare(`SELECT * FROM ${this.tableMeta}`).all() as any[];
+      for (const m of metas) {
+        if (m.key === 'master_key') continue;
+        await client.query(`
+          INSERT INTO ${this.tableMeta} (\`key\`, \`value\`)
+          VALUES (?, ?)
+          ON DUPLICATE KEY UPDATE \`value\` = VALUES(\`value\`)
+        `, [m.key, m.value]);
+      }
     } catch (err: any) {
-      console.warn('[LogVault] Notice: MySQL table initialization:', err?.message || err);
+      console.error('[TracerNest-Logger] ERROR during SQLite -> MySQL migration:', err?.message || err);
+      throw err;
+    }
+  }
+
+  private deleteSqliteFilesPreservingKey(): void {
+    try {
+      // 1. Close current db so Windows releases file locks
+      try {
+        this.db.close();
+      } catch {}
+
+      // 2. Remove primary SQLite file and its journals/dumps
+      const directFiles = [
+        this.sqliteFilePath,
+        `${this.sqliteFilePath}-wal`,
+        `${this.sqliteFilePath}-shm`,
+        this.sqlFilePath
+      ];
+
+      for (const filePath of directFiles) {
+        try {
+          if (filePath && existsSync(filePath)) {
+            // Strictly protect master key file under all circumstances
+            if (filePath.endsWith('.key') || filePath.includes('master-key') || filePath.includes('master.key')) {
+              continue;
+            }
+            unlinkSync(filePath);
+          }
+        } catch {}
+      }
+
+      // 3. Scan directory of sqliteFilePath to remove any remaining sqlite/sql files (preserving key files)
+      const sqliteDir = dirname(this.sqliteFilePath);
+      if (sqliteDir && existsSync(sqliteDir)) {
+        try {
+          const files = readdirSync(sqliteDir);
+          for (const file of files) {
+            // Never delete master key file
+            if (
+              file === '.master.key' ||
+              file.endsWith('.key') ||
+              file.includes('master-key') ||
+              file.includes('master.key')
+            ) {
+              continue;
+            }
+            if (
+              file.endsWith('.sqlite') ||
+              file.endsWith('.sqlite-wal') ||
+              file.endsWith('.sqlite-shm') ||
+              file.endsWith('.sql') ||
+              file.endsWith('.db') ||
+              file.endsWith('.sqlite3')
+            ) {
+              try {
+                unlinkSync(join(sqliteDir, file));
+              } catch {}
+            }
+          }
+        } catch {}
+      }
+
+      // 4. Verify that .master.key remains safely on disk
+      if (existsSync(this.keyFilePath)) {
+        console.log(`[TracerNest-Logger] SQLite files cleaned up. Master encryption key preserved at '${this.keyFilePath}'.`);
+      }
+    } catch (err: any) {
+      console.warn('[TracerNest-Logger] Notice: SQLite file cleanup:', err?.message || err);
+    }
+  }
+
+  private async syncFromMySql(client: any): Promise<void> {
+    try {
+      const helper = async (sql: string, params: any[] = []) => {
+        const res = await client.query(sql, params);
+        if (Array.isArray(res)) {
+          return Array.isArray(res[0]) ? res[0] : res;
+        }
+        return res?.rows || [];
+      };
+
+      // Users
+      const users = await helper(`SELECT * FROM ${this.tableUsers}`);
+      if (Array.isArray(users) && users.length > 0) {
+        const stmt = this.db.prepare(`
+          INSERT OR REPLACE INTO ${this.tableUsers}
+          (id, username, password_hash, salt, role, created_at, last_login_at, must_change_password, token_version)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const u of users) {
+          stmt.run(
+            u.id,
+            u.username,
+            u.password_hash || u.passwordHash,
+            u.salt,
+            u.role,
+            Number(u.created_at || u.createdAt),
+            u.last_login_at ? Number(u.last_login_at) : null,
+            u.must_change_password ? 1 : 0,
+            u.token_version != null ? Number(u.token_version) : 1
+          );
+        }
+      }
+
+      // Alerts
+      const alerts = await helper(`SELECT * FROM ${this.tableAlerts}`);
+      if (Array.isArray(alerts) && alerts.length > 0) {
+        const stmt = this.db.prepare(`
+          INSERT OR REPLACE INTO ${this.tableAlerts}
+          (id, channel, enabled, level_threshold, ciphertext, iv, auth_tag, salt, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const a of alerts) {
+          stmt.run(
+            a.id,
+            a.channel,
+            a.enabled ? 1 : 0,
+            a.level_threshold || a.levelThreshold,
+            a.ciphertext,
+            a.iv,
+            a.auth_tag || a.authTag,
+            a.salt,
+            Number(a.created_at || a.createdAt),
+            Number(a.updated_at || a.updatedAt)
+          );
+        }
+      }
+
+      // System Meta
+      const metas = await helper(`SELECT * FROM ${this.tableMeta}`);
+      if (Array.isArray(metas) && metas.length > 0) {
+        const stmt = this.db.prepare(`
+          INSERT OR REPLACE INTO ${this.tableMeta} (key, value)
+          VALUES (?, ?)
+        `);
+        for (const m of metas) {
+          if (m.key === 'master_key') continue;
+          stmt.run(m.key, m.value);
+        }
+      }
+
+      // Active Logs
+      const now = Date.now();
+      const logs = await helper(`
+        SELECT * FROM ${this.tableLogs}
+        WHERE expires_at IS NULL OR expires_at > ?
+        ORDER BY timestamp DESC
+        LIMIT 5000
+      `, [now]);
+      if (Array.isArray(logs) && logs.length > 0) {
+        const stmt = this.db.prepare(`
+          INSERT OR REPLACE INTO ${this.tableLogs}
+          (id, timestamp, expires_at, level, source, message, raw, metadata, tags)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const l of logs) {
+          stmt.run(
+            l.id,
+            Number(l.timestamp),
+            l.expires_at ? Number(l.expires_at) : null,
+            l.level,
+            l.source,
+            l.message,
+            l.raw || null,
+            l.metadata ? (typeof l.metadata === 'string' ? l.metadata : JSON.stringify(l.metadata)) : null,
+            l.tags ? (typeof l.tags === 'string' ? l.tags : JSON.stringify(l.tags)) : null
+          );
+        }
+      }
+    } catch (err: any) {
+      console.warn('[TracerNest-Logger] Notice: MySQL fast-tier synchronization:', err?.message || err);
     }
   }
 
@@ -337,14 +750,13 @@ export class SqlStore {
   /**
    * Resolves the persistent AES-256-GCM encryption key.
    * SEC-08 Hardening: The master key is strictly managed OUTSIDE the database table,
-   * preferring user configuration (options.masterKey / config.secret), environment variables
-   * (TRACERNEST_SECRET), or an independent .master.key file with restricted file permissions (0600).
+   * preferring user configuration (options.masterKey / config.secret)
+   * or an independent .master.key file with restricted file permissions (0600).
    * It is never stored in system_meta or dumped into .sql artifacts.
    */
   private resolveMasterKey(providedKey?: string): string {
-    // 1. User-supplied key via config (options.masterKey / config.secret) or environment variable
-    const envKey = process.env.TRACERNEST_SECRET || process.env.TRACERNEST_KEY || process.env.LOGVAULT_SECRET;
-    const explicitKey = (providedKey || envKey || '').trim();
+    // 1. User-supplied key via initialization options (options.masterKey / config.secret)
+    const explicitKey = (providedKey || '').trim();
 
     if (explicitKey.length >= 16) {
       this.purgeLegacyDbMasterKey();
@@ -702,6 +1114,405 @@ export class SqlStore {
     return { entries, total: totalRow.count };
   }
 
+  // --- Persistent Telemetry Logs (stdout, stderr, http, api) ---
+
+  public saveLog(entry: LogEntry): void {
+    try {
+      const metaStr = entry.metadata ? JSON.stringify(entry.metadata) : null;
+      const tagsStr = entry.tags ? JSON.stringify(entry.tags) : null;
+      const rawStr = entry.raw || entry.message || '';
+
+      if (!this.stmtInsertLog) {
+        this.stmtInsertLog = this.db.prepare(`
+          INSERT OR REPLACE INTO ${this.tableLogs}
+          (id, timestamp, expires_at, level, source, message, raw, metadata, tags)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+      }
+
+      this.stmtInsertLog.run(
+        entry.id,
+        entry.timestamp,
+        entry.expiresAt ?? null,
+        entry.level,
+        entry.source,
+        entry.message,
+        rawStr,
+        metaStr,
+        tagsStr
+      );
+
+      this.executeMySqlQuery(`
+        INSERT INTO ${this.tableLogs}
+        (id, timestamp, expires_at, level, source, message, raw, metadata, tags)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          timestamp = VALUES(timestamp),
+          expires_at = VALUES(expires_at),
+          level = VALUES(level),
+          source = VALUES(source),
+          message = VALUES(message),
+          raw = VALUES(raw),
+          metadata = VALUES(metadata),
+          tags = VALUES(tags)
+      `, [
+        entry.id,
+        entry.timestamp,
+        entry.expiresAt ?? null,
+        entry.level,
+        entry.source,
+        entry.message,
+        rawStr,
+        metaStr,
+        tagsStr
+      ]);
+    } catch {
+      // Non-blocking so logging operations never throw or disrupt the application
+    }
+  }
+
+  public getRecentLogs(limit = 5000, now = Date.now()): LogEntry[] {
+    try {
+      // Subquery grabs the latest unexpired logs (DESC), outer query re-sorts chronologically (ASC)
+      // so they can be pushed in order into the in-memory circular buffer on server startup
+      const rows = this.db.prepare(`
+        SELECT * FROM (
+          SELECT * FROM ${this.tableLogs}
+          WHERE expires_at IS NULL OR expires_at > ?
+          ORDER BY timestamp DESC
+          LIMIT ?
+        ) ORDER BY timestamp ASC
+      `).all(now, limit) as any[];
+
+      return rows.map(r => {
+        let metadata: any = undefined;
+        if (r.metadata) {
+          try {
+            metadata = JSON.parse(r.metadata);
+          } catch {
+            metadata = { raw: r.metadata };
+          }
+        }
+        let tags: string[] | undefined = undefined;
+        if (r.tags) {
+          try {
+            tags = JSON.parse(r.tags);
+          } catch {}
+        }
+        return {
+          id: r.id,
+          timestamp: Number(r.timestamp),
+          expiresAt: r.expires_at ? Number(r.expires_at) : undefined,
+          level: r.level as LogLevel,
+          source: r.source as any,
+          message: r.message,
+          raw: r.raw || r.message,
+          metadata,
+          tags
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  public purgeExpiredLogs(now = Date.now()): number {
+    try {
+      const res = this.db.prepare(`
+        DELETE FROM ${this.tableLogs}
+        WHERE expires_at IS NOT NULL AND expires_at <= ?
+      `).run(now) as any;
+
+      this.executeMySqlQuery(`
+        DELETE FROM ${this.tableLogs}
+        WHERE expires_at IS NOT NULL AND expires_at <= ?
+      `, [now]);
+
+      return res?.changes ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  public clearLogs(): void {
+    try {
+      this.db.exec(`DELETE FROM ${this.tableLogs}`);
+      this.executeMySqlQuery(`TRUNCATE TABLE ${this.tableLogs}`);
+    } catch {}
+  }
+
+  public getLogsCount(): number {
+    try {
+      const row = this.db.prepare(`SELECT COUNT(*) as count FROM ${this.tableLogs}`).get() as { count: number };
+      return row?.count ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  public getActiveLogsCount(now = Date.now()): number {
+    try {
+      const row = this.db.prepare(`
+        SELECT COUNT(*) as count FROM ${this.tableLogs}
+        WHERE expires_at IS NULL OR expires_at > ?
+      `).get(now) as any;
+      return Number(row?.count ?? 0);
+    } catch {
+      return 0;
+    }
+  }
+
+  public getLogCounts(now = Date.now()): {
+    all: number;
+    error: number;
+    warn: number;
+    info: number;
+    debug: number;
+    http: number;
+  } {
+    try {
+      const row = this.db.prepare(`
+        SELECT
+          COUNT(*) as all_count,
+          SUM(CASE WHEN level = 'error' THEN 1 ELSE 0 END) as error_count,
+          SUM(CASE WHEN level = 'warn' THEN 1 ELSE 0 END) as warn_count,
+          SUM(CASE WHEN level = 'info' THEN 1 ELSE 0 END) as info_count,
+          SUM(CASE WHEN level = 'debug' THEN 1 ELSE 0 END) as debug_count,
+          SUM(CASE WHEN source = 'http' OR metadata LIKE '%"http"%' THEN 1 ELSE 0 END) as http_count
+        FROM ${this.tableLogs}
+        WHERE expires_at IS NULL OR expires_at > ?
+      `).get(now) as any;
+
+      return {
+        all: Number(row?.all_count ?? 0),
+        error: Number(row?.error_count ?? 0),
+        warn: Number(row?.warn_count ?? 0),
+        info: Number(row?.info_count ?? 0),
+        debug: Number(row?.debug_count ?? 0),
+        http: Number(row?.http_count ?? 0)
+      };
+    } catch {
+      return { all: 0, error: 0, warn: 0, info: 0, debug: 0, http: 0 };
+    }
+  }
+
+  public getAllActiveLogs(now = Date.now(), limit = 10000): LogEntry[] {
+    try {
+      const rows = this.db.prepare(`
+        SELECT * FROM ${this.tableLogs}
+        WHERE expires_at IS NULL OR expires_at > ?
+        ORDER BY timestamp ASC
+        LIMIT ?
+      `).all(now, limit) as any[];
+
+      return rows.map(r => {
+        let metadata: any = undefined;
+        if (r.metadata) {
+          try { metadata = JSON.parse(r.metadata); } catch { metadata = { raw: r.metadata }; }
+        }
+        let tags: string[] | undefined = undefined;
+        if (r.tags) {
+          try { tags = JSON.parse(r.tags); } catch {}
+        }
+        return {
+          id: r.id,
+          timestamp: Number(r.timestamp),
+          expiresAt: r.expires_at ? Number(r.expires_at) : undefined,
+          level: r.level as LogLevel,
+          source: r.source as any,
+          message: r.message,
+          raw: r.raw || r.message,
+          metadata,
+          tags
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  public queryLogs(options: LogQueryOptions = {}, now = Date.now()): LogQueryResult {
+    const {
+      search,
+      isRegex,
+      level,
+      from,
+      to,
+      source,
+      limit = 100,
+      offset = 0,
+      order = 'desc',
+      sortBy = 'timestamp'
+    } = options;
+
+    const baseWhere = ['(expires_at IS NULL OR expires_at > ?)'];
+    const params: any[] = [now];
+
+    if (level && level !== 'all') {
+      baseWhere.push('level = ?');
+      params.push(level);
+    }
+
+    if (source && source !== 'all') {
+      baseWhere.push('source = ?');
+      params.push(source);
+    }
+
+    if (from !== undefined) {
+      baseWhere.push('timestamp >= ?');
+      params.push(from);
+    }
+
+    if (to !== undefined) {
+      baseWhere.push('timestamp <= ?');
+      params.push(to);
+    }
+
+    let regex: RegExp | null = null;
+    if (search && search.trim().length > 0) {
+      const s = search.trim();
+      if (isRegex) {
+        regex = SafeRegex.safeCompile(s, 'i');
+        if (!regex) {
+          baseWhere.push('(message LIKE ? OR raw LIKE ? OR metadata LIKE ?)');
+          const sParam = `%${s}%`;
+          params.push(sParam, sParam, sParam);
+        }
+      } else {
+        baseWhere.push('(message LIKE ? OR raw LIKE ? OR metadata LIKE ?)');
+        const sParam = `%${s}%`;
+        params.push(sParam, sParam, sParam);
+      }
+    }
+
+    const whereClause = baseWhere.join(' AND ');
+    const counts = this.getLogCounts(now);
+
+    if (regex) {
+      const allRows = this.db.prepare(`
+        SELECT * FROM ${this.tableLogs}
+        WHERE ${whereClause}
+        ORDER BY timestamp ${order === 'asc' ? 'ASC' : 'DESC'}
+      `).all(...params) as any[];
+
+      const matched: LogEntry[] = [];
+      for (const r of allRows) {
+        let metadata: any = undefined;
+        if (r.metadata) {
+          try { metadata = JSON.parse(r.metadata); } catch { metadata = { raw: r.metadata }; }
+        }
+        let tags: string[] | undefined = undefined;
+        if (r.tags) {
+          try { tags = JSON.parse(r.tags); } catch {}
+        }
+        const entry: LogEntry = {
+          id: r.id,
+          timestamp: Number(r.timestamp),
+          expiresAt: r.expires_at ? Number(r.expires_at) : undefined,
+          level: r.level as LogLevel,
+          source: r.source as any,
+          message: r.message,
+          raw: r.raw || r.message,
+          metadata,
+          tags
+        };
+
+        const matchesMsg = SafeRegex.test(regex, entry.message);
+        const matchesUrl = entry.metadata?.http?.url ? SafeRegex.test(regex, entry.metadata.http.url) : false;
+        const matchesIp = entry.metadata?.http?.clientIp ? SafeRegex.test(regex, entry.metadata.http.clientIp) : false;
+        const matchesMeta = entry.metadata ? SafeRegex.test(regex, JSON.stringify(entry.metadata)) : false;
+
+        if (matchesMsg || matchesUrl || matchesIp || matchesMeta) {
+          matched.push(entry);
+        }
+      }
+
+      if (sortBy === 'level') {
+        const levelRank: Record<LogLevel, number> = { error: 4, warn: 3, info: 2, debug: 1 };
+        matched.sort((a, b) => {
+          const diff = (levelRank[b.level] || 0) - (levelRank[a.level] || 0);
+          return order === 'asc' ? -diff : diff;
+        });
+      }
+
+      const total = matched.length;
+      const paginated = matched.slice(offset, offset + limit);
+      return { logs: paginated, total, offset, limit, counts };
+    }
+
+    const countRow = this.db.prepare(`
+      SELECT COUNT(*) as total FROM ${this.tableLogs}
+      WHERE ${whereClause}
+    `).get(...params) as { total: number };
+
+    const total = countRow?.total ?? 0;
+    const orderDirection = order === 'asc' ? 'ASC' : 'DESC';
+    let orderByClause = `timestamp ${orderDirection}`;
+    if (sortBy === 'level') {
+      orderByClause = `CASE level WHEN 'error' THEN 4 WHEN 'warn' THEN 3 WHEN 'info' THEN 2 WHEN 'debug' THEN 1 ELSE 0 END ${orderDirection}, timestamp DESC`;
+    }
+
+    const queryParams = [...params, limit, offset];
+    const rows = this.db.prepare(`
+      SELECT * FROM ${this.tableLogs}
+      WHERE ${whereClause}
+      ORDER BY ${orderByClause}
+      LIMIT ? OFFSET ?
+    `).all(...queryParams) as any[];
+
+    const logs: LogEntry[] = rows.map(r => {
+      let metadata: any = undefined;
+      if (r.metadata) {
+        try { metadata = JSON.parse(r.metadata); } catch { metadata = { raw: r.metadata }; }
+      }
+      let tags: string[] | undefined = undefined;
+      if (r.tags) {
+        try { tags = JSON.parse(r.tags); } catch {}
+      }
+      return {
+        id: r.id,
+        timestamp: Number(r.timestamp),
+        expiresAt: r.expires_at ? Number(r.expires_at) : undefined,
+        level: r.level as LogLevel,
+        source: r.source as any,
+        message: r.message,
+        raw: r.raw || r.message,
+        metadata,
+        tags
+      };
+    });
+
+    return { logs, total, offset, limit, counts };
+  }
+
+  public applyRuleToExistingLogs(rule: TTLRule): void {
+    try {
+      const conditions: string[] = ['expires_at IS NULL'];
+      const params: any[] = [];
+
+      if (rule.level && rule.level !== 'all') {
+        conditions.push('level = ?');
+        params.push(rule.level);
+      }
+      if (rule.source && rule.source !== 'all') {
+        conditions.push('source = ?');
+        params.push(rule.source);
+      }
+      if (rule.pattern && !rule.compiledRegex) {
+        conditions.push('(message LIKE ? OR metadata LIKE ?)');
+        const p = `%${rule.pattern.trim()}%`;
+        params.push(p, p);
+      }
+
+      const ttlMs = rule.ttlSeconds * 1000;
+      this.db.prepare(`
+        UPDATE ${this.tableLogs}
+        SET expires_at = timestamp + ?
+        WHERE ${conditions.join(' AND ')}
+      `).run(ttlMs, ...params);
+    } catch {}
+  }
+
   public getExcludedRoutes(): ExcludedRouteRule[] {
     try {
       if (this.dialect === 'sqlite') {
@@ -740,6 +1551,9 @@ export class SqlStore {
    * outputting tables prefixed with logg_vault_ and providing both SQLite and MySQL DDL.
    */
   public syncSqlFile(): void {
+    if (this.dialect === 'mysql') {
+      return;
+    }
     try {
       const users = this.db.prepare(`SELECT * FROM ${this.tableUsers}`).all() as any[];
       const alerts = this.db.prepare(`SELECT * FROM ${this.tableAlerts}`).all() as any[];
@@ -795,11 +1609,24 @@ export class SqlStore {
       sqlContent += `  details TEXT\n`;
       sqlContent += `);\n\n`;
 
+      sqlContent += `CREATE TABLE IF NOT EXISTS ${this.tableLogs} (\n`;
+      sqlContent += `  id TEXT PRIMARY KEY,\n`;
+      sqlContent += `  timestamp INTEGER NOT NULL,\n`;
+      sqlContent += `  expires_at INTEGER,\n`;
+      sqlContent += `  level TEXT NOT NULL,\n`;
+      sqlContent += `  source TEXT NOT NULL,\n`;
+      sqlContent += `  message TEXT NOT NULL,\n`;
+      sqlContent += `  raw TEXT,\n`;
+      sqlContent += `  metadata TEXT,\n`;
+      sqlContent += `  tags TEXT\n`;
+      sqlContent += `);\n\n`;
+
       sqlContent += `-- --- MySQL Equivalent DDL (Copy-pasteable for MySQL Workbench / CLI) ---\n`;
       sqlContent += `-- CREATE TABLE IF NOT EXISTS ${this.tableMeta} (\`key\` VARCHAR(191) PRIMARY KEY, \`value\` TEXT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n`;
       sqlContent += `-- CREATE TABLE IF NOT EXISTS ${this.tableUsers} (id VARCHAR(64) PRIMARY KEY, username VARCHAR(191) UNIQUE NOT NULL, password_hash VARCHAR(255) NOT NULL, salt VARCHAR(64) NOT NULL, role VARCHAR(32) NOT NULL, created_at BIGINT NOT NULL, last_login_at BIGINT NULL, must_change_password TINYINT(1) NOT NULL DEFAULT 0, token_version INT NOT NULL DEFAULT 1) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n`;
       sqlContent += `-- CREATE TABLE IF NOT EXISTS ${this.tableAlerts} (id VARCHAR(64) PRIMARY KEY, channel VARCHAR(32) UNIQUE NOT NULL, enabled TINYINT(1) NOT NULL, level_threshold VARCHAR(32) NOT NULL, ciphertext TEXT NOT NULL, iv VARCHAR(64) NOT NULL, auth_tag VARCHAR(64) NOT NULL, salt VARCHAR(64) NOT NULL, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n`;
-      sqlContent += `-- CREATE TABLE IF NOT EXISTS ${this.tableAudit} (id VARCHAR(64) PRIMARY KEY, timestamp BIGINT NOT NULL, user_id VARCHAR(64) NULL, username VARCHAR(191) NULL, action VARCHAR(64) NOT NULL, ip VARCHAR(64) NULL, details TEXT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n\n`;
+      sqlContent += `-- CREATE TABLE IF NOT EXISTS ${this.tableAudit} (id VARCHAR(64) PRIMARY KEY, timestamp BIGINT NOT NULL, user_id VARCHAR(64) NULL, username VARCHAR(191) NULL, action VARCHAR(64) NOT NULL, ip VARCHAR(64) NULL, details TEXT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n`;
+      sqlContent += `-- CREATE TABLE IF NOT EXISTS ${this.tableLogs} (id VARCHAR(64) PRIMARY KEY, timestamp BIGINT NOT NULL, expires_at BIGINT NULL, level VARCHAR(16) NOT NULL, source VARCHAR(32) NOT NULL, message TEXT NOT NULL, raw MEDIUMTEXT NULL, metadata MEDIUMTEXT NULL, tags TEXT NULL, INDEX idx_logs_ts (timestamp DESC), INDEX idx_logs_level (level), INDEX idx_logs_source (source)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n\n`;
 
       if (users.length > 0) {
         sqlContent += `-- Persisted User Accounts (Hashed & Salted)\n`;

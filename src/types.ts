@@ -211,10 +211,27 @@ export type TrustProxyOption =
 
 export interface TracerNestLoggerConfig {
   /**
-   * Path where the dashboard and API are mounted (e.g. '/tracernest-logger' or '/tracenest')
+   * Path where the dashboard and API are mounted (e.g. '/tracernest-logger', '/tracenest', or '/api/tracenest')
    * Default: '/tracernest-logger'
    */
   path?: string;
+
+  /**
+   * Alias for `path`: Base path where the dashboard and API are hosted.
+   */
+  basePath?: string;
+
+  /**
+   * Optional public URL path exposed to browser clients through Nginx or API gateways (e.g. '/api/tracenest').
+   * If not specified, automatically derived from browser location or `apiPrefix` + `path`.
+   */
+  publicPath?: string;
+
+  /**
+   * Optional global API prefix to prepend to all routes (e.g. '/api' -> '/api/tracenest')
+   * Useful when Nginx or an API gateway forwards all backend requests under an '/api' route.
+   */
+  apiPrefix?: string;
 
   /**
    * Database dialect to use for persistent storage.
@@ -248,12 +265,13 @@ export interface TracerNestLoggerConfig {
 
   /**
    * Secret or master key used for HMAC tokens and AES-256-GCM SQL data encryption.
-   * Can also be set via process.env.TRACERNEST_SECRET.
    */
   secret?: string;
 
   /**
    * Alias for secret: user-defined master key for encrypting SQL data at rest.
+   * In containerized environments (Docker/Kubernetes), pass this during initialization
+   * to ensure key persistence across container lifecycles.
    */
   masterKey?: string;
 
@@ -270,10 +288,29 @@ export interface TracerNestLoggerConfig {
   encryptPayloads?: boolean;
 
   /**
-   * Dedicated folder directory where SQLite database, journal, and SQL export files are initialized.
+   * Dedicated directory folder where storage files, SQLite database, journal files,
+   * and the persistent encryption key (.master.key) are initialized.
    * Default: './.tracernest'
+   *
+   * Example:
+   *   dataDir: './my-telemetry-folder'
    */
   dataDir?: string;
+
+  /**
+   * Alias for `dataDir`: Custom folder where TracerNest initializes its storage and key files.
+   */
+  storageDir?: string;
+
+  /**
+   * Alias for `dataDir`: Custom folder where TracerNest initializes its storage and key files.
+   */
+  folder?: string;
+
+  /**
+   * Alias for `dataDir`: Custom folder where TracerNest initializes its storage and key files.
+   */
+  initFolder?: string;
 
   /**
    * File path where the SQL schema and encrypted data are saved.
@@ -292,6 +329,19 @@ export interface TracerNestLoggerConfig {
    * Default: 5000
    */
   bufferSize?: number;
+
+  /**
+   * Automatically persist terminal logs (stdout/stderr) and intercepted HTTP logs to SQLite or MySQL.
+   * On server restarts, the latest logs are automatically reloaded into memory and displayed on the dashboard.
+   * Default: true
+   */
+  persistLogs?: boolean;
+
+  /**
+   * Maximum number of historical logs to retain in persistent database storage.
+   * Default: 50000
+   */
+  maxPersistedLogs?: number;
 
   /**
    * Automatically redact sensitive information (credit cards, passwords, authorization tokens, API keys)
@@ -424,6 +474,24 @@ export interface TracerNestLoggerConfig {
    * Default: Permits dashboard assets and Google Fonts typography ('https://fonts.googleapis.com' and 'https://fonts.gstatic.com').
    */
   csp?: string | boolean;
+
+  /**
+   * Pre-seed or auto-provision root administrator credentials on startup.
+   * If provided and no users exist in the database, TracerNest automatically creates this admin account,
+   * completely eliminating the need for the interactive web setup API behind Nginx/Docker.
+   */
+  initialAdmin?: {
+    username: string;
+    password: string;
+  };
+
+  /**
+   * Disable the interactive web first-time setup API (`POST /api/auth/setup`).
+   * When true, administrators can only be provisioned via `initialAdmin` config, environment variables, or CLI reset utility.
+   * Recommended for locked-down production Nginx reverse proxy deployments.
+   * Default: false
+   */
+  disableSetupApi?: boolean;
 }
 
 export type TraceNestConfig = TracerNestLoggerConfig;

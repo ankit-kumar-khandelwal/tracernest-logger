@@ -63,7 +63,13 @@ Examples:
   console.log('🪺  TracerNest-Logger Administrator Security Reset Utility');
   console.log('================================================================================');
 
-  let dataDir = getArg('--dir', '-d') || process.env.DATA_DIR || (existsSync('./.tracernest') ? './.tracernest' : (existsSync('./tracernest') ? './tracernest' : undefined));
+  let dataDir =
+    getArg('--dir', '-d') ||
+    getArg('--folder') ||
+    getArg('--storage-dir') ||
+    process.env.DATA_DIR ||
+    process.env.STORAGE_DIR ||
+    (existsSync('./.tracernest') ? './.tracernest' : (existsSync('./tracernest') ? './tracernest' : undefined));
 
   let sqlitePath =
     getArg('--sqlite', '-s') ||

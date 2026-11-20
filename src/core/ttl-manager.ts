@@ -10,15 +10,18 @@ export class TTLManager {
   private sweepTimer: NodeJS.Timeout | null = null;
   private ringBuffer?: RingBuffer;
   private sqlStore?: SqlStore;
+  private maxPersistedLogs?: number;
   private totalPurgedCount: number = 0;
 
   constructor(options?: {
     config?: TTLConfig;
     ringBuffer?: RingBuffer;
     sqlStore?: SqlStore;
+    maxPersistedLogs?: number;
   }) {
     this.ringBuffer = options?.ringBuffer;
     this.sqlStore = options?.sqlStore;
+    this.maxPersistedLogs = options?.maxPersistedLogs;
     this.defaultTtlSeconds = options?.config?.defaultTtlSeconds;
 
     // Load initial rules from config
@@ -137,6 +140,11 @@ export class TTLManager {
     };
 
     this.rules.set(id, fullRule);
+    if (this.sqlStore) {
+      try {
+        this.sqlStore.applyRuleToExistingLogs(fullRule);
+      } catch {}
+    }
     return fullRule;
   }
 
@@ -157,12 +165,20 @@ export class TTLManager {
   }
 
   /**
-   * Executes a purge sweep of all expired logs in the ring buffer
+   * Executes a purge sweep of all expired logs whose TTL has completed
    */
   public sweep(): number {
-    if (!this.ringBuffer) return 0;
+    let purged = 0;
+    if (this.sqlStore) {
+      try {
+        purged = this.sqlStore.purgeExpiredLogs(Date.now());
+      } catch {}
+    }
 
-    const purged = this.ringBuffer.purgeExpired(Date.now());
+    if (this.ringBuffer) {
+      this.ringBuffer.purgeExpired(Date.now());
+    }
+
     this.totalPurgedCount += purged;
     return purged;
   }

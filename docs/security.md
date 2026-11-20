@@ -63,7 +63,7 @@ TracerNest defends against this at the network socket layer:
 ## 5. Storage Security & Encryption
 
 - **Encrypted SQL Mirrors:** When running SQLite, TracerNest maintains an auto-synchronized `.sql` file encrypted with AES-256-GCM.
-- **User-Defined Master Keys (SEC-08):** Teams can supply their own master encryption key (`masterKey` / `secret` or via `TRACERNEST_MASTER_KEY` environment variable). The key is never written to the encrypted database tables.
+- **User-Defined Master Keys (SEC-08):** Teams can supply their own master encryption key via constructor options (`masterKey` / `secret`). The key is never written to the encrypted database tables.
 - **CLI Recovery Utility:** If an administrator forgets their credentials, the embedded CLI tool (`npx tracernest-reset-admin`) allows resetting the root password directly from the host terminal.
 
 ---
