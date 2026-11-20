@@ -2,7 +2,7 @@ import { IncomingMessage, ServerResponse } from 'node:http';
 import { URL } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { LogVaultConfig, Permission, UserProfile, ServerHealthInfo, ExcludedRouteRule } from '../types';
+import { LogVaultConfig, Permission, UserProfile, ServerHealthInfo, ExcludedRouteRule, LogEntry, LogLevel } from '../types';
 import { CryptoSecurity } from '../security/crypto';
 import { RBACManager } from '../security/rbac';
 import { UserStore } from '../security/user-store';
@@ -411,6 +411,95 @@ export class HttpHandler {
       this.sendJson(res, 403, {
         error: 'Web reset is disabled for security. Run "npm run reset--admin--user" in your server terminal to reset credentials.'
       });
+      return true;
+    }
+
+    // 4.2 External Telemetry Ingest API (Laravel 13, Monolog, Microservices, Python, Go)
+    if (method === 'POST' && (subPath === '/api/logs/ingest' || subPath === '/api/ingest')) {
+      const authHeader = req.headers['authorization'];
+      const apiKeyHeader = req.headers['x-api-key'] || req.headers['x-tracernest-key'] || req.headers['x-tracenest-key'];
+      const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+
+      let isAuthorized = false;
+
+      if (apiKeyHeader && apiKeyHeader === this.secret) {
+        isAuthorized = true;
+      } else if (bearerToken && bearerToken === this.secret) {
+        isAuthorized = true;
+      } else {
+        const authedUser = this.authenticateRequest(req, parsedUrl);
+        if (authedUser) {
+          isAuthorized = true;
+        }
+      }
+
+      if (!isAuthorized) {
+        this.sendJson(res, 401, { error: 'Unauthorized: Valid API key (x-tracernest-key) or Bearer token required for log ingestion' });
+        return true;
+      }
+
+      const body = await this.readJsonBody(req, res);
+      if (!body) return true;
+
+      const rawEntries = Array.isArray(body) ? body : (Array.isArray(body.logs) ? body.logs : [body]);
+      const ingested: LogEntry[] = [];
+
+      for (const item of rawEntries) {
+        if (!item || typeof item !== 'object') continue;
+        const entryId = item.id || `log_ing_${Date.now()}_${randomBytes(4).toString('hex')}`;
+        const level: LogLevel = (['error', 'warn', 'info', 'debug'].includes(item.level) ? item.level : 'info') as LogLevel;
+        const source = item.source || 'laravel';
+        const message = String(item.message || item.msg || item.raw || 'Telemetry event');
+        const timestamp = typeof item.timestamp === 'number' ? item.timestamp : Date.now();
+        const metadata = item.metadata && typeof item.metadata === 'object' ? item.metadata : (item.context || undefined);
+        const tags = Array.isArray(item.tags) ? item.tags : (item.framework ? [String(item.framework)] : ['laravel', 'external']);
+
+        // Encrypt request/response payloads if payload encryption is enabled
+        let processedMeta = metadata;
+        const shouldEncrypt = this.config.encryptPayloads !== false && Boolean(this.secret);
+        if (shouldEncrypt && processedMeta?.http) {
+          if (processedMeta.http.requestBody && typeof processedMeta.http.requestBody === 'object' && !processedMeta.http.requestBody.__encrypted) {
+            const enc = FastCrypto.encrypt(JSON.stringify(processedMeta.http.requestBody), this.secret);
+            processedMeta.http.requestBody = {
+              __encrypted: true,
+              encrypted: true,
+              algorithm: 'aes-256-gcm',
+              ...enc
+            };
+          }
+          if (processedMeta.http.responseBody && typeof processedMeta.http.responseBody === 'object' && !processedMeta.http.responseBody.__encrypted) {
+            const enc = FastCrypto.encrypt(JSON.stringify(processedMeta.http.responseBody), this.secret);
+            processedMeta.http.responseBody = {
+              __encrypted: true,
+              encrypted: true,
+              algorithm: 'aes-256-gcm',
+              ...enc
+            };
+          }
+        }
+
+        const logEntry: LogEntry = {
+          id: entryId,
+          timestamp,
+          level,
+          source,
+          message,
+          raw: item.raw || message,
+          metadata: processedMeta,
+          tags
+        };
+
+        // Apply active TTL rules if matching
+        this.ttlManager.applyTTL(logEntry);
+
+        this.ringBuffer.push(logEntry);
+        this.sqlStore.saveLog(logEntry);
+        this.alertDispatcher.dispatch(logEntry);
+        this.streamManager.broadcast(logEntry);
+        ingested.push(logEntry);
+      }
+
+      this.sendJson(res, 200, { success: true, count: ingested.length, ids: ingested.map(i => i.id) });
       return true;
     }
 

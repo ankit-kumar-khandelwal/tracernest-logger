@@ -2349,5 +2349,286 @@ test('Integration: Persistent Terminal and HTTP Logs Across Server Restarts', as
   }
 });
 
+test('Integration: SQLite to MySQL Auto-Migration, Schema Updates, SQLite Cleanup & Master Key Preservation with Custom Folder', async () => {
+  const customInitFolder = './test_migration_folder_' + Date.now();
+  if (existsSync(customInitFolder)) rmSync(customInitFolder, { recursive: true, force: true });
+
+  try {
+    // 1. Initial run: Application starts in SQLite mode inside a custom folder
+    const sqliteInstance = new TracerNestLogger({
+      folder: customInitFolder,
+      dialect: 'sqlite',
+      interceptStdout: false,
+      interceptStderr: false,
+      interceptHttp: false
+    });
+
+    // Seed SQLite data: Users, Alerts, Excluded Routes, Telemetry Logs
+    sqliteInstance.userStore.createUser('migrated_admin', 'Pass1234!', 'admin');
+    sqliteInstance.sqlStore.saveAlertConfig('email', true, 'error', {
+      smtpHost: 'smtp.sendgrid.net',
+      smtpPort: 587,
+      to: 'ops@acme.corp'
+    });
+    sqliteInstance.sqlStore.saveExcludedRoutes([
+      { id: 'ex_1', path: '/api/v1/health', enabled: true, createdAt: Date.now() }
+    ]);
+    sqliteInstance.ringBuffer.push({
+      id: 'log_sqlite_migrated',
+      timestamp: Date.now() - 1000,
+      level: 'warn',
+      source: 'stdout',
+      message: 'Initial startup log in SQLite mode',
+      raw: 'Initial startup log in SQLite mode'
+    });
+
+    // Verify all files were created in customInitFolder
+    const sqliteFilePath = `${customInitFolder}/tracernest-logger.sqlite`;
+    const sqlFilePath = `${customInitFolder}/tracernest-logger.sql`;
+    const masterKeyPath = `${customInitFolder}/.master.key`;
+
+    assert.ok(existsSync(sqliteFilePath), 'SQLite database file should exist before migration');
+    assert.ok(existsSync(masterKeyPath), '.master.key must exist in custom initialization folder');
+    const originalMasterKey = readFileSync(masterKeyPath, 'utf8').trim();
+    assert.ok(originalMasterKey.length >= 16, 'Original master key must be a valid secret');
+
+    // Stop SQLite instance and close db so handles are released
+    sqliteInstance.stop();
+    sqliteInstance.sqlStore.close();
+
+    // 2. Developer updates initialization in app.js from SQLite to MySQL
+    const mysqlStorage: Record<string, any[]> = {
+      users: [],
+      alert_configs: [],
+      audit_logs: [],
+      logs: [],
+      system_meta: []
+    };
+    const executedQueries: string[] = [];
+
+    const mockPool = {
+      query: async (sql: string, params?: any[]) => {
+        executedQueries.push(sql);
+
+        // Normalize SQL
+        const cleanSql = sql.replace(/\s+/g, ' ').trim();
+
+        if (cleanSql.includes('INSERT INTO') && cleanSql.includes('users') || cleanSql.includes('REPLACE INTO') && cleanSql.includes('users')) {
+          if (params) {
+            const [id, username, password_hash, salt, role, created_at, last_login_at, must_change_password, token_version] = params;
+            mysqlStorage.users = mysqlStorage.users.filter(u => u.id !== id && u.username !== username);
+            mysqlStorage.users.push({ id, username, password_hash, salt, role, created_at, last_login_at, must_change_password, token_version });
+          }
+          return [[]];
+        }
+
+        if (cleanSql.includes('INSERT INTO') && cleanSql.includes('alert_configs') || cleanSql.includes('REPLACE INTO') && cleanSql.includes('alert_configs')) {
+          if (params) {
+            const [id, channel, enabled, level_threshold, ciphertext, iv, auth_tag, salt, created_at, updated_at] = params;
+            mysqlStorage.alert_configs = mysqlStorage.alert_configs.filter(a => a.channel !== channel);
+            mysqlStorage.alert_configs.push({ id, channel, enabled, level_threshold, ciphertext, iv, auth_tag, salt, created_at, updated_at });
+          }
+          return [[]];
+        }
+
+        if (cleanSql.includes('INSERT INTO') && cleanSql.includes('logs') || cleanSql.includes('REPLACE INTO') && cleanSql.includes('logs')) {
+          if (params) {
+            const [id, timestamp, expires_at, level, source, message, raw, metadata, tags] = params;
+            mysqlStorage.logs = mysqlStorage.logs.filter(l => l.id !== id);
+            mysqlStorage.logs.push({ id, timestamp, expires_at, level, source, message, raw, metadata, tags });
+          }
+          return [[]];
+        }
+
+        if (cleanSql.includes('INSERT INTO') && cleanSql.includes('system_meta') || cleanSql.includes('REPLACE INTO') && cleanSql.includes('system_meta')) {
+          if (params) {
+            const [key, value] = params;
+            mysqlStorage.system_meta = mysqlStorage.system_meta.filter(m => m.key !== key);
+            mysqlStorage.system_meta.push({ key, value });
+          }
+          return [[]];
+        }
+
+        if (cleanSql.includes('SELECT * FROM') && cleanSql.includes('users')) {
+          return [mysqlStorage.users];
+        }
+
+        if (cleanSql.includes('SELECT * FROM') && cleanSql.includes('alert_configs')) {
+          return [mysqlStorage.alert_configs];
+        }
+
+        if (cleanSql.includes('SELECT * FROM') && cleanSql.includes('system_meta')) {
+          return [mysqlStorage.system_meta];
+        }
+
+        if (cleanSql.includes('FROM') && cleanSql.includes('logs')) {
+          return [mysqlStorage.logs];
+        }
+
+        return [[]];
+      }
+    };
+
+    const mysqlInstance = new TracerNestLogger({
+      folder: customInitFolder,
+      dialect: 'mysql',
+      mysql: { pool: mockPool },
+      interceptStdout: false,
+      interceptStderr: false,
+      interceptHttp: false
+    });
+
+    // Wait for asynchronous MySQL initialization and SQLite-to-MySQL auto-migration to complete
+    await mysqlInstance.sqlStore.initMySql();
+
+    // 3. Verify SQLite data was migrated into MySQL
+    assert.strictEqual(mysqlStorage.users.length, 1, 'User must be migrated to MySQL');
+    assert.strictEqual(mysqlStorage.users[0].username, 'migrated_admin');
+    assert.strictEqual(mysqlStorage.alert_configs.length, 1, 'Alert config must be migrated to MySQL');
+    assert.strictEqual(mysqlStorage.alert_configs[0].channel, 'email');
+    assert.strictEqual(mysqlStorage.logs.length, 1, 'Log entry must be migrated to MySQL');
+    assert.strictEqual(mysqlStorage.logs[0].id, 'log_sqlite_migrated');
+
+    // 4. Verify SQLite database & SQL mirror files are deleted
+    assert.strictEqual(existsSync(sqliteFilePath), false, 'SQLite database file (.sqlite) must be deleted after migration');
+    assert.strictEqual(existsSync(sqlFilePath), false, 'Synchronized SQL file (.sql) must be deleted after migration');
+
+    // 5. Verify .master.key is strictly PRESERVED and untouched
+    assert.ok(existsSync(masterKeyPath), '.master.key file MUST be preserved after migration');
+    const preservedMasterKey = readFileSync(masterKeyPath, 'utf8').trim();
+    assert.strictEqual(preservedMasterKey, originalMasterKey, 'Preserved master key must match original exactly');
+
+    // 6. Verify fast local in-memory tier is populated from MySQL for synchronous reads
+    const syncedUser = mysqlInstance.sqlStore.getUserByUsername('migrated_admin');
+    assert.ok(syncedUser, 'Migrated user must be accessible via synchronous get');
+    assert.strictEqual(syncedUser?.username, 'migrated_admin');
+
+    const syncedAlert = mysqlInstance.sqlStore.getAlertConfig('email');
+    assert.ok(syncedAlert, 'Migrated alert config must be decryptable and accessible');
+    assert.strictEqual(syncedAlert?.channel, 'email');
+    assert.strictEqual(syncedAlert?.settings?.smtpHost, 'smtp.sendgrid.net');
+
+    // 7. Verify newly installed package schema updates (ALTER TABLE ADD COLUMN) were executed
+    const alterUserQueries = executedQueries.filter(q => q.includes('ALTER TABLE') && q.includes('ADD COLUMN'));
+    assert.ok(alterUserQueries.length >= 4, 'Schema update queries (ALTER TABLE ADD COLUMN) must be executed');
+
+    mysqlInstance.stop();
+    mysqlInstance.sqlStore.close();
+  } finally {
+    if (existsSync(customInitFolder)) rmSync(customInitFolder, { recursive: true, force: true });
+  }
+});
+
+test('Integration: Laravel 13 Telemetry Ingestion API (POST /api/logs/ingest)', async () => {
+  const testDir = './test_laravel_ingest_' + Date.now();
+  if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+
+  const masterSecret = '0123456789abcdef0123456789abcdef';
+  const tracer = new TracerNestLogger({
+    folder: testDir,
+    masterKey: masterSecret,
+    interceptStdout: false,
+    interceptStderr: false,
+    interceptHttp: false
+  });
+
+  try {
+    // 1. Ingestion without auth -> 401
+    const unauthReq = createMockReqRes({
+      method: 'POST',
+      url: '/tracernest-logger/api/logs/ingest',
+      body: { message: 'Attempt unauthorized log' }
+    });
+    await tracer.handleRequest(unauthReq.req, unauthReq.res);
+    assert.strictEqual(unauthReq.getResponse().statusCode, 401);
+
+    // 2. Ingestion with valid x-tracernest-key header -> 200
+    const laravelReq = createMockReqRes({
+      method: 'POST',
+      url: '/tracernest-logger/api/logs/ingest',
+      headers: {
+        'x-tracernest-key': masterSecret
+      },
+      body: {
+        level: 'error',
+        source: 'laravel',
+        message: 'HTTP [POST] /api/v1/orders - 500 (45ms)',
+        metadata: {
+          framework: 'laravel',
+          version: '13',
+          http: {
+            method: 'POST',
+            url: '/api/v1/orders',
+            statusCode: 500,
+            durationMs: 45,
+            clientIp: '198.51.100.22',
+            requestBody: { items: [{ id: 'item_1', qty: 2 }] },
+            responseBody: { error: 'Payment gateway timeout' }
+          }
+        },
+        tags: ['laravel', 'laravel13', 'orders']
+      }
+    });
+
+    await tracer.handleRequest(laravelReq.req, laravelReq.res);
+    assert.strictEqual(laravelReq.getResponse().statusCode, 200);
+    const ingestRes = laravelReq.getResponse().json();
+    assert.strictEqual(ingestRes.success, true);
+    assert.strictEqual(ingestRes.count, 1);
+
+    // 3. Batch Ingestion of Laravel Monolog logs
+    const batchReq = createMockReqRes({
+      method: 'POST',
+      url: '/tracernest-logger/api/logs/ingest',
+      headers: {
+        'authorization': `Bearer ${masterSecret}`
+      },
+      body: {
+        logs: [
+          {
+            level: 'info',
+            source: 'laravel',
+            message: 'Queue worker job processed: SendOrderConfirmationEmail',
+            metadata: { framework: 'laravel', version: '13', queue: 'default' },
+            tags: ['laravel', 'queue']
+          },
+          {
+            level: 'warn',
+            source: 'laravel',
+            message: 'Redis cache hit ratio below 80%',
+            metadata: { framework: 'laravel', version: '13', cache: 'redis' },
+            tags: ['laravel', 'cache']
+          }
+        ]
+      }
+    });
+
+    await tracer.handleRequest(batchReq.req, batchReq.res);
+    assert.strictEqual(batchReq.getResponse().statusCode, 200);
+    const batchRes = batchReq.getResponse().json();
+    assert.strictEqual(batchRes.count, 2);
+
+    // 4. Verify ringBuffer and query API contain the ingested Laravel logs
+    const queried = tracer.ringBuffer.query({ source: 'laravel' });
+    assert.strictEqual(queried.total, 3, 'All 3 Laravel logs should be stored and queryable');
+    const orderLog = queried.logs.find(l => l.message.includes('/api/v1/orders'));
+    assert.ok(orderLog, 'Laravel HTTP error log must exist in ring buffer');
+    assert.strictEqual(orderLog?.level, 'error');
+    assert.strictEqual(orderLog?.metadata?.framework, 'laravel');
+    assert.strictEqual(orderLog?.metadata?.version, '13');
+
+    // Verify payload encryption on request/response body
+    assert.ok(orderLog?.metadata?.http?.requestBody?.encrypted || orderLog?.metadata?.http?.requestBody?.__encrypted, 'Payload must be encrypted with AES-256-GCM');
+
+    // 5. Verify database persistence
+    assert.strictEqual(tracer.sqlStore.getLogsCount(), 3, 'Logs must be persisted to SQL store');
+
+    tracer.stop();
+    tracer.sqlStore.close();
+  } finally {
+    if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+  }
+});
+
 
 

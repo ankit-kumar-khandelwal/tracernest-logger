@@ -265,12 +265,13 @@ export interface TracerNestLoggerConfig {
 
   /**
    * Secret or master key used for HMAC tokens and AES-256-GCM SQL data encryption.
-   * Can also be set via process.env.TRACERNEST_SECRET.
    */
   secret?: string;
 
   /**
    * Alias for secret: user-defined master key for encrypting SQL data at rest.
+   * In containerized environments (Docker/Kubernetes), pass this during initialization
+   * to ensure key persistence across container lifecycles.
    */
   masterKey?: string;
 
@@ -287,10 +288,29 @@ export interface TracerNestLoggerConfig {
   encryptPayloads?: boolean;
 
   /**
-   * Dedicated folder directory where SQLite database, journal, and SQL export files are initialized.
+   * Dedicated directory folder where storage files, SQLite database, journal files,
+   * and the persistent encryption key (.master.key) are initialized.
    * Default: './.tracernest'
+   *
+   * Example:
+   *   dataDir: './my-telemetry-folder'
    */
   dataDir?: string;
+
+  /**
+   * Alias for `dataDir`: Custom folder where TracerNest initializes its storage and key files.
+   */
+  storageDir?: string;
+
+  /**
+   * Alias for `dataDir`: Custom folder where TracerNest initializes its storage and key files.
+   */
+  folder?: string;
+
+  /**
+   * Alias for `dataDir`: Custom folder where TracerNest initializes its storage and key files.
+   */
+  initFolder?: string;
 
   /**
    * File path where the SQL schema and encrypted data are saved.
@@ -459,7 +479,6 @@ export interface TracerNestLoggerConfig {
    * Pre-seed or auto-provision root administrator credentials on startup.
    * If provided and no users exist in the database, TracerNest automatically creates this admin account,
    * completely eliminating the need for the interactive web setup API behind Nginx/Docker.
-   * Can also be set via process.env.TRACERNEST_ADMIN_USERNAME and process.env.TRACERNEST_ADMIN_PASSWORD.
    */
   initialAdmin?: {
     username: string;

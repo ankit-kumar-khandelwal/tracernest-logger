@@ -38,17 +38,20 @@ export class TracerNestLogger {
   private server: Server | null = null;
 
   constructor(config: TracerNestLoggerConfig = {}) {
-    const dataDir = config.dataDir || DEFAULT_DATA_DIR;
-    const defaultSqlPath = config.dataDir ? `${config.dataDir}/tracernest-logger.sql` : DEFAULT_SQL_PATH;
-    const defaultSqlitePath = config.dataDir ? `${config.dataDir}/tracernest-logger.sqlite` : DEFAULT_SQLITE_PATH;
+    const dataDir = config.dataDir || config.storageDir || config.folder || config.initFolder || (config as any).dir || DEFAULT_DATA_DIR;
+    const defaultSqlPath = `${dataDir}/tracernest-logger.sql`;
+    const defaultSqlitePath = `${dataDir}/tracernest-logger.sqlite`;
 
     const effectiveConfig: TracerNestLoggerConfig = {
       path: DEFAULT_BASE_PATH,
       title: DEFAULT_APP_TITLE,
       logo: DEFAULT_TRACERNEST_LOGO,
       dataDir,
-      sqlFilePath: defaultSqlPath,
-      sqliteFilePath: defaultSqlitePath,
+      storageDir: dataDir,
+      folder: dataDir,
+      initFolder: dataDir,
+      sqlFilePath: config.sqlFilePath || defaultSqlPath,
+      sqliteFilePath: config.sqliteFilePath || defaultSqlitePath,
       tablePrefix: DEFAULT_TABLE_PREFIX,
       ...config
     };
@@ -57,7 +60,10 @@ export class TracerNestLogger {
     // 1. Initialize SQL Storage (SQLite + auto-synchronized encrypted SQL file, or MySQL)
     const userEncryptionKey = effectiveConfig.encryptionKey || effectiveConfig.secret || effectiveConfig.masterKey;
     this.sqlStore = new SqlStore({
-      dataDir: effectiveConfig.dataDir,
+      dataDir,
+      storageDir: dataDir,
+      folder: dataDir,
+      initFolder: dataDir,
       sqlFilePath: effectiveConfig.sqlFilePath,
       sqliteFilePath: effectiveConfig.sqliteFilePath,
       masterKey: userEncryptionKey,
@@ -79,8 +85,8 @@ export class TracerNestLogger {
     this.userStore = new UserStore(this.sqlStore);
 
     // Pre-seed initial administrator account if configured and database has no users
-    const adminUser = effectiveConfig.initialAdmin?.username || process.env.TRACERNEST_ADMIN_USERNAME;
-    const adminPass = effectiveConfig.initialAdmin?.password || process.env.TRACERNEST_ADMIN_PASSWORD;
+    const adminUser = effectiveConfig.initialAdmin?.username;
+    const adminPass = effectiveConfig.initialAdmin?.password;
     if (adminUser && adminPass && !this.userStore.hasUsers()) {
       try {
         this.userStore.createUser(adminUser, adminPass, 'admin');
