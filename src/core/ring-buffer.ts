@@ -1,6 +1,7 @@
 import { freemem, totalmem } from 'os';
 import { LogEntry, LogLevel, LogQueryOptions, LogQueryResult, TraceNestStats, LogVaultStats } from '../types';
 import { SafeRegex } from '../security/safe-regex';
+import { SqlStore } from '../security/sql-store';
 
 export class RingBuffer {
   private buffer: Array<LogEntry | null>;
@@ -9,6 +10,8 @@ export class RingBuffer {
   private tail: number = 0;
   private count: number = 0;
   private totalPurgedCount: number = 0;
+  private sqlStore?: SqlStore;
+  private persistLogs: boolean;
 
   // Level counters for fast metric calculation
   private levelCounts: Record<LogLevel, number> = {
@@ -22,7 +25,7 @@ export class RingBuffer {
   private recentTimestamps: number[] = [];
   private startTime: number = Date.now();
 
-  constructor(capacity = 5000) {
+  constructor(capacity = 5000, sqlStore?: SqlStore, persistLogs = true) {
     if (typeof capacity !== 'number' || isNaN(capacity) || capacity <= 0) {
       throw new Error('Capacity must be greater than 0');
     }
@@ -31,6 +34,22 @@ export class RingBuffer {
 
     this.capacity = capacity;
     this.buffer = new Array(capacity).fill(null);
+    this.sqlStore = sqlStore;
+    this.persistLogs = persistLogs;
+  }
+
+  public setSqlStore(sqlStore: SqlStore, persistLogs = true): void {
+    this.sqlStore = sqlStore;
+    this.persistLogs = persistLogs;
+  }
+
+  /**
+   * Bulk-loads previously persisted historical logs into the ring buffer without re-persisting them.
+   */
+  public loadPersistedLogs(entries: LogEntry[]): void {
+    for (const entry of entries) {
+      this.push(entry, false);
+    }
   }
 
   /**
@@ -67,7 +86,7 @@ export class RingBuffer {
   /**
    * Appends a log entry in O(1) time
    */
-  public push(entry: LogEntry): void {
+  public push(entry: LogEntry, persist = true): void {
     if (this.count === this.capacity) {
       // Buffer is full; overwrite the oldest entry at tail
       const oldEntry = this.buffer[this.tail];
@@ -93,6 +112,13 @@ export class RingBuffer {
     while (this.recentTimestamps.length > 0 && this.recentTimestamps[0] < cutoff) {
       this.recentTimestamps.shift();
     }
+
+    // Persist to SQLite / MySQL database if enabled
+    if (persist && this.persistLogs && this.sqlStore) {
+      try {
+        this.sqlStore.saveLog(entry);
+      } catch {}
+    }
   }
 
   /**
@@ -100,6 +126,13 @@ export class RingBuffer {
    * filtering out any expired entries based on TTL
    */
   public toArray(now = Date.now()): LogEntry[] {
+    if (this.sqlStore && this.persistLogs) {
+      try {
+        const dbLogs = this.sqlStore.getAllActiveLogs(now);
+        if (dbLogs.length > 0) return dbLogs;
+      } catch {}
+    }
+
     const result: LogEntry[] = [];
     if (this.count === 0) return result;
 
@@ -121,6 +154,14 @@ export class RingBuffer {
    * Queries logs with filtering, search, and pagination (excluding expired TTL logs)
    */
   public query(options: LogQueryOptions = {}, now = Date.now()): LogQueryResult {
+    if (this.sqlStore && this.persistLogs) {
+      try {
+        return this.sqlStore.queryLogs(options, now);
+      } catch {
+        // Fallback to in-memory if database query fails
+      }
+    }
+
     const {
       search,
       isRegex,
@@ -261,7 +302,13 @@ export class RingBuffer {
     this.levelCounts = { debug: 0, info: 0, warn: 0, error: 0 };
 
     for (const item of validEntries) {
-      this.push(item);
+      this.push(item, false);
+    }
+
+    if (this.persistLogs && this.sqlStore) {
+      try {
+        this.sqlStore.purgeExpiredLogs(now);
+      } catch {}
     }
 
     this.totalPurgedCount += purged;
@@ -283,14 +330,31 @@ export class RingBuffer {
     const memoryUsageMb = Number((mem.heapUsed / (1024 * 1024)).toFixed(2));
     const uptimeSeconds = Math.floor((now - this.startTime) / 1000);
 
+    let totalLogs = this.count;
+    let errorCount = this.levelCounts.error;
+    let warnCount = this.levelCounts.warn;
+    let infoCount = this.levelCounts.info;
+    let debugCount = this.levelCounts.debug;
+
+    if (this.sqlStore && this.persistLogs) {
+      try {
+        const counts = this.sqlStore.getLogCounts(now);
+        totalLogs = counts.all;
+        errorCount = counts.error;
+        warnCount = counts.warn;
+        infoCount = counts.info;
+        debugCount = counts.debug;
+      } catch {}
+    }
+
     return {
-      totalLogs: this.count,
-      errorCount: this.levelCounts.error,
-      warnCount: this.levelCounts.warn,
-      infoCount: this.levelCounts.info,
-      debugCount: this.levelCounts.debug,
+      totalLogs,
+      errorCount,
+      warnCount,
+      infoCount,
+      debugCount,
       logsPerSecond,
-      bufferUsagePercent: Math.round((this.count / this.capacity) * 100),
+      bufferUsagePercent: Math.min(100, Math.round((totalLogs / this.capacity) * 100)),
       memoryUsageMb,
       uptimeSeconds,
       expiredLogsPurged: this.totalPurgedCount
@@ -300,16 +364,28 @@ export class RingBuffer {
   /**
    * Clears the buffer completely
    */
-  public clear(): void {
+  public clear(): number {
+    const previousCount = this.count;
     this.buffer = new Array(this.capacity).fill(null);
     this.head = 0;
     this.tail = 0;
     this.count = 0;
     this.levelCounts = { debug: 0, info: 0, warn: 0, error: 0 };
     this.recentTimestamps = [];
+    if (this.persistLogs && this.sqlStore) {
+      try {
+        this.sqlStore.clearLogs();
+      } catch {}
+    }
+    return previousCount;
   }
 
   public size(): number {
+    if (this.sqlStore && this.persistLogs) {
+      try {
+        return this.sqlStore.getLogsCount();
+      } catch {}
+    }
     return this.count;
   }
 

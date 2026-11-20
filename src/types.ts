@@ -311,6 +311,19 @@ export interface TracerNestLoggerConfig {
   bufferSize?: number;
 
   /**
+   * Automatically persist terminal logs (stdout/stderr) and intercepted HTTP logs to SQLite or MySQL.
+   * On server restarts, the latest logs are automatically reloaded into memory and displayed on the dashboard.
+   * Default: true
+   */
+  persistLogs?: boolean;
+
+  /**
+   * Maximum number of historical logs to retain in persistent database storage.
+   * Default: 50000
+   */
+  maxPersistedLogs?: number;
+
+  /**
    * Automatically redact sensitive information (credit cards, passwords, authorization tokens, API keys)
    * Default: true
    */

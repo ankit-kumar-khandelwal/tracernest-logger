@@ -1250,14 +1250,14 @@ export function getDashboardHtml(basePath: string, appTitle = 'TracerNest-Logger
 
     .log-modal-container {
       background: var(--bg-secondary);
-      border: 1px solid var(--border);
-      border-radius: 10px;
+      border: 1px solid var(--border-strong);
+      border-radius: 12px;
       width: 100%;
-      max-width: 840px;
-      max-height: 88vh;
+      max-width: 1060px;
+      max-height: 90vh;
       display: flex;
       flex-direction: column;
-      box-shadow: 0 24px 50px -10px rgba(0, 0, 0, 0.9);
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.06);
       overflow: hidden;
       animation: modalFadeIn 0.14s cubic-bezier(0.16, 1, 0.3, 1);
     }
@@ -1272,6 +1272,374 @@ export function getDashboardHtml(basePath: string, appTitle = 'TracerNest-Logger
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 0.75rem;
+    }
+    .modal-id-badge {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      background: var(--bg-base);
+      padding: 2px 7px;
+      border-radius: 4px;
+      border: 1px solid var(--border-strong);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .modal-id-badge:hover {
+      color: #fff;
+      border-color: var(--accent-primary);
+      background: rgba(99, 102, 241, 0.15);
+    }
+    .modal-http-banner {
+      background: #080d1a;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      padding: 0.85rem 1.15rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    }
+    .modal-http-banner-left {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      flex: 1;
+      min-width: 0;
+    }
+    .modal-http-banner-url {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: #ffffff;
+      font-size: 0.95rem;
+      word-break: break-all;
+      letter-spacing: -0.01em;
+    }
+    .modal-http-banner-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+    .modal-tab-nav {
+      display: flex;
+      gap: 0.4rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+      margin-top: 0.15rem;
+      overflow-x: auto;
+    }
+    .modal-tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-secondary);
+      font-size: 0.76rem;
+      font-weight: 600;
+      padding: 0.38rem 0.8rem;
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .modal-tab-btn:hover {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .modal-tab-btn.active {
+      color: #fff;
+      background: rgba(99, 102, 241, 0.18);
+      border-color: rgba(99, 102, 241, 0.35);
+    }
+    .modal-tab-pane {
+      display: block;
+      animation: modalFadeIn 0.12s ease;
+    }
+    .modal-payload-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      align-items: stretch;
+    }
+    @media (max-width: 860px) {
+      .modal-payload-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .modal-payload-card {
+      background: #070e1e;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      transition: all 0.15s ease;
+    }
+    .modal-payload-card.req-card {
+      border-top: 3px solid #38bdf8;
+    }
+    .modal-payload-card.res-card {
+      border-top: 3px solid #10b981;
+    }
+    .modal-payload-card:hover {
+      border-color: rgba(255, 255, 255, 0.22);
+    }
+    .modal-payload-header {
+      background: #0d1527;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+    .req-card .modal-payload-header {
+      background: #091326;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.18);
+    }
+    .res-card .modal-payload-header {
+      background: #081820;
+      border-bottom: 1px solid rgba(16, 185, 129, 0.18);
+    }
+    .payload-header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .payload-header-sub {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .payload-badge-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 5px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .req-icon {
+      background: rgba(56, 189, 248, 0.18);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+    }
+    .res-icon {
+      background: rgba(16, 185, 129, 0.18);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+    .payload-title-text {
+      font-size: 0.86rem;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+    .payload-sub-pill {
+      font-size: 0.65rem;
+      font-family: var(--font-mono);
+      color: #94a3b8;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .payload-info-meta {
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      color: #94a3b8;
+      white-space: nowrap;
+    }
+    .modal-code-viewer {
+      background: #020617 !important;
+      border: none !important;
+      padding: 1rem 1.15rem !important;
+      font-family: var(--font-mono) !important;
+      font-size: 0.8rem !important;
+      line-height: 1.6 !important;
+      color: #e2e8f0 !important;
+      min-height: 250px;
+      max-height: 420px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      border-radius: 0 0 10px 10px;
+      scrollbar-width: thin;
+    }
+    .syntax-key { color: #38bdf8; font-weight: 600; }
+    .syntax-string { color: #34d399; }
+    .syntax-number { color: #fbbf24; font-weight: 500; }
+    .syntax-boolean { color: #f472b6; font-weight: 600; }
+    .syntax-null { color: #94a3b8; font-style: italic; }
+    .empty-payload-view {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      min-height: 250px;
+      padding: 2.5rem 1.5rem;
+      background: #020617;
+      border-radius: 0 0 10px 10px;
+    }
+    .empty-payload-icon {
+      margin-bottom: 0.75rem;
+      opacity: 0.8;
+    }
+    .empty-payload-title {
+      color: #e2e8f0;
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin-bottom: 0.35rem;
+    }
+    .empty-payload-hint {
+      color: #64748b;
+      font-size: 0.75rem;
+      max-width: 320px;
+      line-height: 1.5;
+    }
+    .modal-raw-viewer {
+      max-height: 420px !important;
+      background: #020617 !important;
+    }
+    .btn-decrypt {
+      color: #ffffff !important;
+      background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%) !important;
+      border: 1px solid #818cf8 !important;
+      font-weight: 600 !important;
+      font-size: 0.75rem !important;
+      padding: 0.36rem 0.8rem !important;
+      border-radius: 6px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+      white-space: nowrap !important;
+      flex-shrink: 0 !important;
+      cursor: pointer !important;
+      box-shadow: 0 2px 8px rgba(79, 70, 229, 0.4);
+      transition: all 0.15s ease !important;
+    }
+    .btn-decrypt:hover:not(:disabled) {
+      background: linear-gradient(135deg, #4338ca 0%, #4f46e5 100%) !important;
+      box-shadow: 0 4px 14px rgba(79, 70, 229, 0.6);
+      transform: translateY(-1px);
+    }
+    .btn-decrypt:disabled,
+    .btn-decrypt.decrypted {
+      background: rgba(16, 185, 129, 0.18) !important;
+      color: #34d399 !important;
+      border-color: rgba(16, 185, 129, 0.4) !important;
+      box-shadow: none !important;
+      cursor: default !important;
+      transform: none !important;
+    }
+    .btn-copy-payload {
+      background: rgba(255, 255, 255, 0.06) !important;
+      border: 1px solid rgba(255, 255, 255, 0.14) !important;
+      color: #cbd5e1 !important;
+      font-weight: 500 !important;
+      font-size: 0.75rem !important;
+      padding: 0.36rem 0.75rem !important;
+      border-radius: 6px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 5px !important;
+      white-space: nowrap !important;
+      flex-shrink: 0 !important;
+      cursor: pointer !important;
+      transition: all 0.15s ease !important;
+    }
+    .btn-copy-payload:hover {
+      background: rgba(255, 255, 255, 0.12) !important;
+      color: #ffffff !important;
+      border-color: rgba(255, 255, 255, 0.28) !important;
+    }
+    .badge-encrypted {
+      background: rgba(99, 102, 241, 0.2) !important;
+      color: #c7d2fe !important;
+      border: 1px solid rgba(99, 102, 241, 0.45) !important;
+      font-size: 0.68rem !important;
+      padding: 2px 8px !important;
+      border-radius: 4px !important;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+    .badge-decrypted {
+      background: rgba(16, 185, 129, 0.2) !important;
+      color: #6ee7b7 !important;
+      border: 1px solid rgba(16, 185, 129, 0.45) !important;
+      font-size: 0.68rem !important;
+      padding: 2px 8px !important;
+      border-radius: 4px !important;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+    .headers-container {
+      background: var(--bg-base);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: auto;
+      max-height: 380px;
+    }
+    .headers-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+    }
+    .headers-table th {
+      background: var(--bg-surface);
+      color: var(--text-muted);
+      text-align: left;
+      padding: 0.5rem 0.85rem;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      font-size: 0.68rem;
+    }
+    .headers-table td {
+      padding: 0.5rem 0.85rem;
+      border-bottom: 1px solid var(--border-subtle);
+      vertical-align: top;
+    }
+    .headers-table tr:last-child td {
+      border-bottom: none;
+    }
+    .headers-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .header-key {
+      color: #94a3b8;
+      font-weight: 600;
+      word-break: break-all;
+    }
+    .header-val {
+      color: #38bdf8;
+      word-break: break-all;
     }
     .log-modal-body {
       padding: 1.25rem;
@@ -2490,8 +2858,8 @@ ${brandTitleHtml}
         <div style="display:flex; align-items:center; gap:0.65rem; flex-wrap:wrap;">
           <span id="lmLevelPill" class="severity-pill pill-info">INFO</span>
           <span id="lmSourcePill" class="source-label">STDOUT</span>
-          <h3 style="font-size:0.95rem; font-weight:700; color:#fff; letter-spacing:-0.01em;">Log Entry Inspector</h3>
-          <span id="lmIdBadge" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary); background:var(--bg-base); padding:2px 7px; border-radius:4px; border:1px solid var(--border-strong);"></span>
+          <h3 style="font-size:0.95rem; font-weight:700; color:#fff; letter-spacing:-0.01em; margin:0;">Full Inspect Log</h3>
+          <span id="lmIdBadge" class="modal-id-badge" onclick="copyModalId()" title="Click to copy Log ID"></span>
         </div>
         <div style="display:flex; align-items:center; gap:0.5rem;">
           <button class="btn btn-sm" id="btnModalPrev" onclick="navigateModalLog(-1)" title="Previous Log (Left Arrow)">
@@ -2508,7 +2876,38 @@ ${brandTitleHtml}
       </div>
 
       <div class="log-modal-body">
-        <div class="log-meta-bar">
+        <!-- HTTP Quick Overview Banner (Shown when entry has HTTP metadata) -->
+        <div id="lmHttpBanner" class="modal-http-banner" style="display:none;">
+          <div class="modal-http-banner-left">
+            <div style="display:flex; align-items:center; gap:0.65rem; flex-wrap:wrap;">
+              <span id="lmHttpBannerMethod" class="method-badge">POST</span>
+              <span id="lmHttpBannerStatus" class="status-badge">200</span>
+              <span id="lmHttpBannerUrl" class="modal-http-banner-url"></span>
+            </div>
+            <div style="display:flex; align-items:center; gap:0.65rem; flex-wrap:wrap; font-size:0.75rem; color:var(--text-secondary); margin-top:2px;">
+              <span class="api-pill" id="lmHttpBannerLatency" title="Execution Duration">⏱️ 0ms</span>
+              <span class="api-pill api-pill-ip" id="lmHttpBannerIp" title="Client IP Address">🌐 127.0.0.1</span>
+              <span class="api-pill" id="lmHttpBannerTime" title="Timestamp">📅 -</span>
+            </div>
+          </div>
+          <div class="modal-http-banner-actions">
+            <button class="btn btn-sm btn-copy-payload" onclick="copyModalUrl()" title="Copy Full URL">
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span>Copy URL</span>
+            </button>
+            <button class="btn btn-sm btn-copy-payload" id="btnModalCopyCurlTop" onclick="copyModalCurl()" title="Copy as cURL">
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span>Copy cURL</span>
+            </button>
+            <button class="btn btn-sm" style="color:#f87171; border-color:rgba(239,68,68,0.35); background:rgba(239,68,68,0.08);" id="btnModalSkipRoute" onclick="promptQuickExcludeRouteModal()" title="Skip tracking this route">
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+              <span>Skip Route</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Non-HTTP Meta Bar & Legacy Meta Items -->
+        <div id="lmNonHttpMetaBar" class="log-meta-bar">
           <div class="meta-item">
             <span class="meta-item-label">TIMESTAMP</span>
             <span id="lmTimestamp" class="meta-item-val">-</span>
@@ -2535,63 +2934,150 @@ ${brandTitleHtml}
           </div>
         </div>
 
-        <div class="log-modal-section">
-          <div class="log-modal-section-header">
-            <span>COMPLETE LOG MESSAGE</span>
-            <button class="btn btn-sm" id="btnCopyMsg" onclick="copyModalMsg()">
-              <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Copy Full Message
-            </button>
-          </div>
-          <pre id="lmFullMessage" class="log-modal-code"></pre>
+        <!-- Modal Tab Navigation -->
+        <div class="modal-tab-nav" id="lmTabNav">
+          <button class="modal-tab-btn active" id="lmTabBtnPayloads" onclick="switchModalTab('payloads')">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            <span id="lmTabLabelPayloads">Request & Response Payloads</span>
+            <span id="lmTabEncIndicator" class="badge badge-encrypted" style="display:none; font-size:0.6rem; padding:1px 5px;">🔒 Encrypted</span>
+          </button>
+          <button class="modal-tab-btn" id="lmTabBtnHeaders" onclick="switchModalTab('headers')">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <span>HTTP Headers</span>
+            <span id="lmTabHeaderCount" class="badge" style="background:rgba(255,255,255,0.08); font-size:0.6rem; padding:1px 5px;">0</span>
+          </button>
+          <button class="modal-tab-btn" id="lmTabBtnDetails" onclick="switchModalTab('details')">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="21" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+            <span>Log Message & Details</span>
+          </button>
+          <button class="modal-tab-btn" id="lmTabBtnRaw" onclick="switchModalTab('raw')">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span>Raw JSON Record</span>
+          </button>
         </div>
 
-        <div id="lmHttpSection" class="log-modal-section" style="display:none;">
-          <div class="log-modal-section-header">
-            <span>HTTP REQUEST & RESPONSE PAYLOADS</span>
-          </div>
-          <div class="http-inspector-grid" style="padding:0;">
-            <div class="payload-card">
-              <div class="payload-title-bar">
-                <span style="display:inline-flex; align-items:center; gap:5px;"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="M6 11l6 6 6-6"/><path d="M19 21H5"/></svg><span>Request Payload (JSON)</span><span id="lmReqEncBadge" class="badge" style="display:none; background:rgba(99,102,241,0.18); color:#a5b4fc; font-size:0.65rem; padding:1px 6px; border-radius:4px; border:1px solid rgba(99,102,241,0.3);">🔒 AES-256-GCM Encrypted</span></span>
-                <div style="display:flex; gap:4px;">
-                  <button class="btn btn-sm" id="btnDecryptModalReq" style="display:none; color:#818cf8; border-color:rgba(129,140,248,0.3);" onclick="decryptPayloadInModal('req')">🔓 Decrypt</button>
-                  <button class="btn btn-sm" id="btnCopyReqPayload" onclick="copyModalReq()">Copy</button>
+        <!-- Tab 1: HTTP Payloads -->
+        <div id="lmTabPanePayloads" class="modal-tab-pane">
+          <div id="lmHttpSection" class="modal-payload-grid">
+            <!-- Request Card -->
+            <div class="modal-payload-card req-card">
+              <div class="modal-payload-header">
+                <div class="payload-header-top">
+                  <div style="display:flex; align-items:center; gap:0.55rem;">
+                    <div class="payload-badge-icon req-icon">
+                      <svg class="icon icon-sm" style="width:13px; height:13px;" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="M6 11l6 6 6-6"/><path d="M19 21H5"/></svg>
+                    </div>
+                    <span class="payload-title-text">Request Payload</span>
+                    <span class="payload-sub-pill" id="lmReqSubPill">Incoming Body</span>
+                  </div>
+                  <div style="display:flex; gap:6px; align-items:center;">
+                    <button class="btn btn-decrypt" id="btnDecryptModalReq" style="display:none;" onclick="decryptPayloadInModal('req')">
+                      <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                      <span>Decrypt</span>
+                    </button>
+                    <button class="btn btn-copy-payload" id="btnCopyReqPayload" onclick="copyModalReq()">
+                      <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                      <span>Copy</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="payload-header-sub">
+                  <span id="lmReqClientInfo" class="payload-info-meta">Client IP: 127.0.0.1</span>
+                  <span id="lmReqEncBadge" class="badge badge-encrypted" style="display:none;">🔒 AES-256-GCM Encrypted</span>
                 </div>
               </div>
-              <pre id="lmReqPayload" class="json-code" style="max-height:220px;"></pre>
+              <pre id="lmReqPayload" class="modal-code-viewer json-code"></pre>
             </div>
-            <div class="payload-card">
-              <div class="payload-title-bar">
-                <span style="display:inline-flex; align-items:center; gap:5px;"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 3v14"/><path d="M18 9l-6-6-6 6"/><path d="M5 21h14"/></svg><span>Response Payload (JSON)</span><span id="lmResEncBadge" class="badge" style="display:none; background:rgba(99,102,241,0.18); color:#a5b4fc; font-size:0.65rem; padding:1px 6px; border-radius:4px; border:1px solid rgba(99,102,241,0.3);">🔒 AES-256-GCM Encrypted</span></span>
-                <div style="display:flex; gap:4px;">
-                  <button class="btn btn-sm" id="btnDecryptModalRes" style="display:none; color:#818cf8; border-color:rgba(129,140,248,0.3);" onclick="decryptPayloadInModal('res')">🔓 Decrypt</button>
-                  <button class="btn btn-sm" id="btnCopyResPayload" onclick="copyModalRes()">Copy</button>
+
+            <!-- Response Card -->
+            <div class="modal-payload-card res-card">
+              <div class="modal-payload-header">
+                <div class="payload-header-top">
+                  <div style="display:flex; align-items:center; gap:0.55rem;">
+                    <div class="payload-badge-icon res-icon">
+                      <svg class="icon icon-sm" style="width:13px; height:13px;" viewBox="0 0 24 24"><path d="M12 3v14"/><path d="M18 9l-6-6-6 6"/><path d="M5 21h14"/></svg>
+                    </div>
+                    <span class="payload-title-text">Response Payload</span>
+                    <span id="lmResStatusBadge" class="status-badge status-2xx">200 OK</span>
+                  </div>
+                  <div style="display:flex; gap:6px; align-items:center;">
+                    <button class="btn btn-decrypt" id="btnDecryptModalRes" style="display:none;" onclick="decryptPayloadInModal('res')">
+                      <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                      <span>Decrypt</span>
+                    </button>
+                    <button class="btn btn-copy-payload" id="btnCopyResPayload" onclick="copyModalRes()">
+                      <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                      <span>Copy</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="payload-header-sub">
+                  <span id="lmResDurationInfo" class="payload-info-meta">Execution: 0ms</span>
+                  <span id="lmResEncBadge" class="badge badge-encrypted" style="display:none;">🔒 AES-256-GCM Encrypted</span>
                 </div>
               </div>
-              <pre id="lmResPayload" class="json-code" style="max-height:220px;"></pre>
+              <pre id="lmResPayload" class="modal-code-viewer json-code"></pre>
             </div>
           </div>
         </div>
 
-        <div class="log-modal-section">
-          <div class="log-modal-section-header">
-            <span>RAW LOG RECORD (JSON)</span>
-            <button class="btn btn-sm" id="btnCopyRawEntry" onclick="copyModalRaw()">
+        <!-- Tab 2: HTTP Headers -->
+        <div id="lmTabPaneHeaders" class="modal-tab-pane" style="display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+            <span style="font-size:0.75rem; color:var(--text-secondary); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.05em; font-weight:600;">Request HTTP Headers</span>
+            <button class="btn btn-sm" onclick="copyModalHeaders()">
               <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Copy Raw JSON
+              Copy All Headers
             </button>
           </div>
-          <pre id="lmRawEntry" class="log-modal-code" style="max-height:200px; color:var(--text-secondary);"></pre>
+          <div id="lmHeadersContainer" class="headers-container"></div>
+        </div>
+
+        <!-- Tab 3: Log Message & Details -->
+        <div id="lmTabPaneDetails" class="modal-tab-pane" style="display:none;">
+          <div class="log-modal-section">
+            <div class="log-modal-section-header">
+              <span>COMPLETE LOG MESSAGE</span>
+              <button class="btn btn-sm" id="btnCopyMsg" onclick="copyModalMsg()">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                Copy Message
+              </button>
+            </div>
+            <pre id="lmFullMessage" class="log-modal-code"></pre>
+          </div>
+          <div id="lmMetadataSection" class="log-modal-section" style="display:none; margin-top:0.75rem;">
+            <div class="log-modal-section-header">
+              <span>EXTENDED METADATA / ERROR DETAILS</span>
+            </div>
+            <pre id="lmExtraMetadata" class="log-modal-code"></pre>
+          </div>
+        </div>
+
+        <!-- Tab 4: Raw JSON Record -->
+        <div id="lmTabPaneRaw" class="modal-tab-pane" style="display:none;">
+          <div class="log-modal-section">
+            <div class="log-modal-section-header">
+              <span>RAW LOG RECORD (FULL STRUCTURED JSON)</span>
+              <button class="btn btn-sm" id="btnCopyRawEntry" onclick="copyModalRaw()">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                Copy Raw JSON
+              </button>
+            </div>
+            <pre id="lmRawEntry" class="log-modal-code modal-raw-viewer"></pre>
+          </div>
         </div>
       </div>
 
       <div class="log-modal-footer">
-        <span style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);">Use ◀ / ▶ arrow keys to step through logs, ESC to close</span>
+        <span style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);">
+          💡 Shortcuts: <kbd style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px;">◀</kbd> / <kbd style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px;">▶</kbd> Navigate logs &bull; <kbd style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px;">ESC</kbd> Close
+        </span>
         <div style="display:flex; gap:0.5rem;">
-          <button class="btn" id="btnModalCopyCurl" style="display:none; align-items:center; gap:5px;" onclick="copyModalCurl()"><svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy cURL</span></button>
-          <button class="btn btn-primary" onclick="copyModalMsg()">Copy Message</button>
-          <button class="btn" onclick="closeLogModal()">Close</button>
+          <button class="btn" id="btnModalCopyCurl" style="display:none; align-items:center; gap:5px;" onclick="copyModalCurl()">
+            <svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span>Copy cURL</span>
+          </button>
+          <button class="btn btn-primary" onclick="closeLogModal()">Close</button>
         </div>
       </div>
     </div>
@@ -3235,10 +3721,133 @@ ${brandTitleHtml}
       return wrap;
     }
 
+    function isPayloadEncrypted(payload) {
+      if (!payload) return false;
+      if (typeof payload === 'object') {
+        return Boolean(payload.encrypted || payload.__encrypted);
+      }
+      if (typeof payload === 'string') {
+        if (payload.includes('$') && payload.split('$').length === 4) return true;
+        try {
+          const parsed = JSON.parse(payload);
+          return Boolean(parsed && typeof parsed === 'object' && (parsed.encrypted || parsed.__encrypted));
+        } catch (e) {
+          return false;
+        }
+      }
+      return false;
+    }
+
+    function extractEncryptedPayload(payload) {
+      if (!payload) return null;
+      if (typeof payload === 'object') return payload;
+      if (typeof payload === 'string') {
+        if (payload.includes('$') && payload.split('$').length === 4) return payload;
+        try {
+          const parsed = JSON.parse(payload);
+          if (parsed && typeof parsed === 'object' && (parsed.encrypted || parsed.__encrypted || (parsed.ciphertext && parsed.iv))) {
+            return parsed;
+          }
+        } catch (e) {}
+        return payload;
+      }
+      return payload;
+    }
+
+    let currentModalTab = 'payloads';
+
+    function switchModalTab(tabName) {
+      currentModalTab = tabName;
+      const tabs = ['payloads', 'headers', 'details', 'raw'];
+      tabs.forEach(t => {
+        const btn = document.getElementById('lmTabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
+        const pane = document.getElementById('lmTabPane' + t.charAt(0).toUpperCase() + t.slice(1));
+        if (btn) btn.classList.toggle('active', t === tabName);
+        if (pane) pane.style.display = (t === tabName) ? 'block' : 'none';
+      });
+    }
+
+    function copyModalId() {
+      if (!currentModalEntry) return;
+      navigator.clipboard.writeText(currentModalEntry.id);
+      showToast('Log ID copied to clipboard');
+    }
+
+    function copyModalUrl() {
+      if (!currentModalEntry?.metadata?.http?.url) return;
+      navigator.clipboard.writeText(currentModalEntry.metadata.http.url);
+      showToast('URL copied to clipboard');
+    }
+
+    function copyModalHeaders() {
+      if (!currentModalEntry?.metadata?.http?.headers) return;
+      navigator.clipboard.writeText(JSON.stringify(currentModalEntry.metadata.http.headers, null, 2));
+      showToast('HTTP headers copied to clipboard');
+    }
+
+    function promptQuickExcludeRouteModal() {
+      if (!currentModalEntry?.metadata?.http) return;
+      const h = currentModalEntry.metadata.http;
+      promptQuickExcludeRoute(h.url || '', h.method || 'ALL');
+    }
+
+    function renderEmptyPayload(type) {
+      const isReq = type === 'req';
+      const title = isReq ? 'No Request Body' : 'No Response Body';
+      const desc = isReq
+        ? 'This request was sent without an HTTP payload body (e.g. GET/HEAD query or empty POST).'
+        : 'No response body was returned or recorded for this HTTP transaction.';
+      return '<div class="empty-payload-view">' +
+        '<svg class="icon empty-payload-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>' +
+        '<div class="empty-payload-title">' + title + '</div>' +
+        '<div class="empty-payload-sub">' + desc + '</div>' +
+        '</div>';
+    }
+
+    function syntaxHighlightJson(json) {
+      if (json === null || json === undefined) return '';
+      let str = '';
+      if (typeof json === 'object') {
+        str = JSON.stringify(json, null, 2);
+      } else if (typeof json === 'string') {
+        try {
+          str = JSON.stringify(JSON.parse(json), null, 2);
+        } catch (e) {
+          str = json;
+          return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+      } else {
+        str = String(json);
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+
+      str = str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return str.replace(/("(\\\\u[a-zA-Z0-9]{4}|\\\\[^u]|[^\\\\"])*"(\\s*:)?|\\b(true|false|null)\\b|-?\\d+(?:\\.\\d*)?(?:[eE][+\\-]?\\d+)?)/g, function (match) {
+        let cls = 'syntax-number';
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = 'syntax-key';
+          } else {
+            cls = 'syntax-string';
+          }
+        } else if (/true|false/.test(match)) {
+          cls = 'syntax-boolean';
+        } else if (/null/.test(match)) {
+          cls = 'syntax-null';
+        }
+        return '<span class="' + cls + '">' + match + '</span>';
+      });
+    }
+
     function openLogModal(id) {
-      const ordered = getOrderedLogs();
-      const idx = ordered.findIndex(e => e.id === id);
-      if (idx === -1) return;
+      let ordered = getOrderedLogs();
+      let idx = ordered.findIndex(e => e.id === id);
+      if (idx === -1) {
+        const direct = logsCache.find(e => e.id === id);
+        if (!direct) return;
+        ordered = [direct];
+        idx = 0;
+      }
       const entry = ordered[idx];
       currentModalEntry = entry;
 
@@ -3254,35 +3863,92 @@ ${brandTitleHtml}
       if (idxSpan) idxSpan.textContent = (idx + 1) + ' of ' + ordered.length;
 
       const pill = document.getElementById('lmLevelPill');
-      pill.textContent = entry.level.toUpperCase();
-      pill.className = 'severity-pill pill-' + entry.level;
+      if (pill) {
+        pill.textContent = entry.level.toUpperCase();
+        pill.className = 'severity-pill pill-' + entry.level;
+      }
 
       const srcPill = document.getElementById('lmSourcePill');
-      srcPill.textContent = (entry.source || 'stdout').toUpperCase();
-      srcPill.className = 'source-label ' + (entry.source === 'http' ? 'http' : '');
+      if (srcPill) {
+        srcPill.textContent = (entry.source || 'stdout').toUpperCase();
+        srcPill.className = 'source-label ' + (entry.source === 'http' ? 'http' : '');
+      }
 
-      document.getElementById('lmIdBadge').textContent = 'ID: ' + entry.id;
+      const idBadge = document.getElementById('lmIdBadge');
+      if (idBadge) {
+        idBadge.textContent = 'ID: ' + entry.id;
+        idBadge.dataset.id = entry.id;
+      }
 
       const d = new Date(entry.timestamp);
-      document.getElementById('lmTimestamp').textContent = d.toISOString() + ' (' + d.toLocaleTimeString() + ')';
-      document.getElementById('lmLevelText').textContent = entry.level.toUpperCase();
-      document.getElementById('lmSourceText').textContent = entry.source || 'stdout';
+      const timeFormatted = d.toISOString() + ' (' + d.toLocaleTimeString() + ')';
+      const tsEl = document.getElementById('lmTimestamp');
+      if (tsEl) tsEl.textContent = timeFormatted;
+      const lvlText = document.getElementById('lmLevelText');
+      if (lvlText) lvlText.textContent = entry.level.toUpperCase();
+      const srcText = document.getElementById('lmSourceText');
+      if (srcText) srcText.textContent = entry.source || 'stdout';
 
       const http = entry.metadata?.http;
+      const httpBanner = document.getElementById('lmHttpBanner');
+      const nonHttpMetaBar = document.getElementById('lmNonHttpMetaBar');
+      const tabBtnPayloads = document.getElementById('lmTabBtnPayloads');
+      const tabBtnHeaders = document.getElementById('lmTabBtnHeaders');
+      const tabEncIndicator = document.getElementById('lmTabEncIndicator');
+      const curlBtn = document.getElementById('btnModalCopyCurl');
+      const curlBtnTop = document.getElementById('btnModalCopyCurlTop');
       const durItem = document.getElementById('lmMetaDurationItem');
       const statusItem = document.getElementById('lmMetaStatusItem');
       const httpSec = document.getElementById('lmHttpSection');
-      const curlBtn = document.getElementById('btnModalCopyCurl');
 
       if (http) {
         if (curlBtn) curlBtn.style.display = 'inline-flex';
-        durItem.style.display = 'flex';
-        document.getElementById('lmDurationText').textContent = (http.durationMs !== undefined ? http.durationMs + 'ms' : '-');
+        if (curlBtnTop) curlBtnTop.style.display = 'inline-flex';
+        if (durItem) {
+          durItem.style.display = 'flex';
+          const durText = document.getElementById('lmDurationText');
+          if (durText) durText.textContent = (http.durationMs !== undefined ? http.durationMs + 'ms' : '-');
+        }
+        if (statusItem) {
+          statusItem.style.display = 'flex';
+          const stText = document.getElementById('lmStatusText');
+          if (stText) stText.textContent = http.statusCode || '-';
+        }
+        if (httpSec) httpSec.style.display = 'grid';
 
-        statusItem.style.display = 'flex';
-        document.getElementById('lmStatusText').textContent = http.statusCode || '-';
+        if (httpBanner) {
+          httpBanner.style.display = 'flex';
+          const mBadge = document.getElementById('lmHttpBannerMethod');
+          if (mBadge) {
+            const method = (http.method || 'GET').toUpperCase();
+            mBadge.textContent = method;
+            mBadge.className = 'method-badge method-' + method;
+          }
+          const sBadge = document.getElementById('lmHttpBannerStatus');
+          if (sBadge) {
+            const code = http.statusCode || 200;
+            sBadge.textContent = code;
+            sBadge.className = 'status-badge ' + (code >= 500 ? 'status-5xx' : code >= 400 ? 'status-4xx' : 'status-2xx');
+          }
+          const urlEl = document.getElementById('lmHttpBannerUrl');
+          if (urlEl) urlEl.textContent = http.url || entry.message || '/';
 
-        httpSec.style.display = 'flex';
+          const latEl = document.getElementById('lmHttpBannerLatency');
+          if (latEl) latEl.textContent = '⏱️ ' + (http.durationMs !== undefined ? http.durationMs + 'ms' : '0ms');
+
+          const ipEl = document.getElementById('lmHttpBannerIp');
+          if (ipEl) ipEl.textContent = '🌐 ' + (http.clientIp || '127.0.0.1');
+
+          const timeEl = document.getElementById('lmHttpBannerTime');
+          if (timeEl) timeEl.textContent = '📅 ' + d.toLocaleTimeString();
+        }
+        if (nonHttpMetaBar) nonHttpMetaBar.style.display = 'none';
+
+        // Show Payloads & Headers tabs
+        if (tabBtnPayloads) tabBtnPayloads.style.display = 'inline-flex';
+        if (tabBtnHeaders) tabBtnHeaders.style.display = 'inline-flex';
+
+        // Process Payloads
         const reqEl = document.getElementById('lmReqPayload');
         const resEl = document.getElementById('lmResPayload');
         const reqEncBadge = document.getElementById('lmReqEncBadge');
@@ -3290,31 +3956,136 @@ ${brandTitleHtml}
         const btnDecReq = document.getElementById('btnDecryptModalReq');
         const btnDecRes = document.getElementById('btnDecryptModalRes');
 
-        const isReqEnc = http.requestBody && (http.requestBody.encrypted || http.requestBody.__encrypted);
-        const isResEnc = http.responseBody && (http.responseBody.encrypted || http.responseBody.__encrypted);
+        const hasReq = http.requestBody !== undefined && http.requestBody !== null;
+        const isReqEnc = isPayloadEncrypted(http.requestBody);
+        const hasRes = http.responseBody !== undefined && http.responseBody !== null;
+        const isResEnc = isPayloadEncrypted(http.responseBody);
 
-        if (reqEncBadge) reqEncBadge.style.display = isReqEnc ? 'inline-flex' : 'none';
-        if (resEncBadge) resEncBadge.style.display = isResEnc ? 'inline-flex' : 'none';
+        if (tabEncIndicator) {
+          if (isReqEnc || isResEnc) {
+            tabEncIndicator.style.display = 'inline-flex';
+            tabEncIndicator.textContent = '🔒 Encrypted';
+            tabEncIndicator.className = 'badge badge-encrypted';
+          } else {
+            tabEncIndicator.style.display = 'none';
+          }
+        }
+
+        // Populate Request Card Sub-header & Controls
+        const reqClientEl = document.getElementById('lmReqClientInfo');
+        if (reqClientEl) {
+          reqClientEl.textContent = 'Client IP: ' + (http.clientIp || entry.metadata?.clientIp || entry.metadata?.ip || '127.0.0.1');
+        }
+
+        if (reqEncBadge) {
+          if (isReqEnc) {
+            reqEncBadge.style.display = 'inline-flex';
+            reqEncBadge.textContent = '🔒 AES-256-GCM Encrypted';
+            reqEncBadge.className = 'badge badge-encrypted';
+          } else if (hasReq && http.requestBody && !isReqEnc && (http.encrypted || http.requestBody.decrypted)) {
+            reqEncBadge.style.display = 'inline-flex';
+            reqEncBadge.textContent = '🔓 Decrypted';
+            reqEncBadge.className = 'badge badge-decrypted';
+          } else {
+            reqEncBadge.style.display = 'none';
+          }
+        }
         if (btnDecReq) {
           btnDecReq.style.display = isReqEnc ? 'inline-flex' : 'none';
-          btnDecReq.textContent = '🔓 Decrypt';
+          btnDecReq.innerHTML = '<svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg><span>Decrypt</span>';
           btnDecReq.disabled = false;
-          btnDecReq.style.color = '#818cf8';
+          btnDecReq.classList.remove('decrypted');
+        }
+
+        // Populate Response Card Sub-header & Controls
+        const resDurEl = document.getElementById('lmResDurationInfo');
+        if (resDurEl) {
+          resDurEl.textContent = 'Execution: ' + (http.durationMs !== undefined ? http.durationMs + 'ms' : '0ms');
+        }
+
+        const resStatusEl = document.getElementById('lmResStatusBadge');
+        if (resStatusEl) {
+          const code = http.statusCode || 200;
+          const statusText = code >= 500 ? 'Server Error' : (code >= 400 ? 'Client Error' : (code >= 300 ? 'Redirect' : 'OK'));
+          resStatusEl.textContent = code + ' ' + statusText;
+          resStatusEl.className = 'status-badge ' + (code >= 500 ? 'status-5xx' : (code >= 400 ? 'status-4xx' : 'status-2xx'));
+        }
+
+        if (resEncBadge) {
+          if (isResEnc) {
+            resEncBadge.style.display = 'inline-flex';
+            resEncBadge.textContent = '🔒 AES-256-GCM Encrypted';
+            resEncBadge.className = 'badge badge-encrypted';
+          } else if (hasRes && http.responseBody && !isResEnc && (http.encrypted || http.responseBody.decrypted)) {
+            resEncBadge.style.display = 'inline-flex';
+            resEncBadge.textContent = '🔓 Decrypted';
+            resEncBadge.className = 'badge badge-decrypted';
+          } else {
+            resEncBadge.style.display = 'none';
+          }
         }
         if (btnDecRes) {
           btnDecRes.style.display = isResEnc ? 'inline-flex' : 'none';
-          btnDecRes.textContent = '🔓 Decrypt';
+          btnDecRes.innerHTML = '<svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg><span>Decrypt</span>';
           btnDecRes.disabled = false;
-          btnDecRes.style.color = '#818cf8';
+          btnDecRes.classList.remove('decrypted');
         }
 
-        reqEl.textContent = http.requestBody !== undefined ? JSON.stringify(http.requestBody, null, 2) : '(No Request Body)';
-        resEl.textContent = http.responseBody !== undefined ? JSON.stringify(http.responseBody, null, 2) : '(No Response Body)';
+        if (reqEl) {
+          reqEl.innerHTML = hasReq ? syntaxHighlightJson(http.requestBody) : renderEmptyPayload('req');
+        }
+        if (resEl) {
+          resEl.innerHTML = hasRes ? syntaxHighlightJson(http.responseBody) : renderEmptyPayload('res');
+        }
+
+        // Render Headers
+        const headers = http.headers || {};
+        const headerKeys = Object.keys(headers);
+        const headerCountBadge = document.getElementById('lmTabHeaderCount');
+        if (headerCountBadge) headerCountBadge.textContent = headerKeys.length;
+
+        const headersContainer = document.getElementById('lmHeadersContainer');
+        if (headersContainer) {
+          if (headerKeys.length === 0) {
+            headersContainer.innerHTML = '<div style="color:var(--text-muted); padding:1.5rem; text-align:center; font-style:italic;">No HTTP headers recorded for this request.</div>';
+          } else {
+            let hHtml = '<table class="headers-table"><thead><tr><th style="width:220px;">Header Name</th><th>Header Value</th></tr></thead><tbody>';
+            for (const k of headerKeys.sort()) {
+              const val = headers[k];
+              hHtml += '<tr><td class="header-key">' + escapeHtml(k) + '</td><td class="header-val">' + escapeHtml(String(val)) + '</td></tr>';
+            }
+            hHtml += '</tbody></table>';
+            headersContainer.innerHTML = hHtml;
+          }
+        }
+
+        // Default to payloads tab for HTTP logs
+        switchModalTab('payloads');
       } else {
+        // Non-HTTP Log
         if (curlBtn) curlBtn.style.display = 'none';
-        durItem.style.display = 'none';
-        statusItem.style.display = 'none';
-        httpSec.style.display = 'none';
+        if (curlBtnTop) curlBtnTop.style.display = 'none';
+        if (httpBanner) httpBanner.style.display = 'none';
+        if (nonHttpMetaBar) nonHttpMetaBar.style.display = 'flex';
+        if (durItem) durItem.style.display = 'none';
+        if (statusItem) statusItem.style.display = 'none';
+        if (httpSec) httpSec.style.display = 'none';
+        if (tabBtnPayloads) tabBtnPayloads.style.display = 'none';
+        if (tabBtnHeaders) tabBtnHeaders.style.display = 'none';
+        if (tabEncIndicator) tabEncIndicator.style.display = 'none';
+
+        // Show non-HTTP extra metadata if present
+        const metaSec = document.getElementById('lmMetadataSection');
+        const extraEl = document.getElementById('lmExtraMetadata');
+        if (entry.metadata && Object.keys(entry.metadata).length > 0) {
+          if (metaSec) metaSec.style.display = 'block';
+          if (extraEl) extraEl.textContent = JSON.stringify(entry.metadata, null, 2);
+        } else {
+          if (metaSec) metaSec.style.display = 'none';
+        }
+
+        // Default to details tab for non-HTTP logs
+        switchModalTab('details');
       }
 
       const ipItem = document.getElementById('lmMetaIpItem');
@@ -3328,10 +4099,10 @@ ${brandTitleHtml}
       }
 
       const msgEl = document.getElementById('lmFullMessage');
-      msgEl.textContent = entry.message || '(Empty message)';
+      if (msgEl) msgEl.textContent = entry.message || '(Empty message)';
 
       const rawEl = document.getElementById('lmRawEntry');
-      rawEl.textContent = JSON.stringify(entry, null, 2);
+      if (rawEl) rawEl.textContent = JSON.stringify(entry, null, 2);
 
       modal.classList.add('active');
     }
@@ -3411,13 +4182,13 @@ ${brandTitleHtml}
 
     function copyModalReq() {
       if (!currentModalEntry?.metadata?.http?.requestBody) return;
-      navigator.clipboard.writeText(JSON.stringify(currentModalEntry.metadata.http.requestBody, null, 2));
+      navigator.clipboard.writeText(typeof currentModalEntry.metadata.http.requestBody === 'string' ? currentModalEntry.metadata.http.requestBody : JSON.stringify(currentModalEntry.metadata.http.requestBody, null, 2));
       showToast('Request JSON copied');
     }
 
     function copyModalRes() {
       if (!currentModalEntry?.metadata?.http?.responseBody) return;
-      navigator.clipboard.writeText(JSON.stringify(currentModalEntry.metadata.http.responseBody, null, 2));
+      navigator.clipboard.writeText(typeof currentModalEntry.metadata.http.responseBody === 'string' ? currentModalEntry.metadata.http.responseBody : JSON.stringify(currentModalEntry.metadata.http.responseBody, null, 2));
       showToast('Response JSON copied');
     }
 
@@ -3430,12 +4201,17 @@ ${brandTitleHtml}
     async function decryptPayloadInModal(type) {
       if (!currentModalEntry?.metadata?.http) return;
       const http = currentModalEntry.metadata.http;
-      const targetPayload = type === 'req' ? http.requestBody : http.responseBody;
-      if (!targetPayload) return;
+      const rawPayload = type === 'req' ? http.requestBody : http.responseBody;
+      if (!rawPayload) return;
+      const targetPayload = extractEncryptedPayload(rawPayload);
 
       const el = type === 'req' ? document.getElementById('lmReqPayload') : document.getElementById('lmResPayload');
       const btn = type === 'req' ? document.getElementById('btnDecryptModalReq') : document.getElementById('btnDecryptModalRes');
-      if (btn) btn.textContent = 'Decrypting...';
+      const badge = type === 'req' ? document.getElementById('lmReqEncBadge') : document.getElementById('lmResEncBadge');
+      if (btn) {
+        btn.innerHTML = '<svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Decrypting...</span>';
+        btn.disabled = true;
+      }
 
       try {
         const res = await fetch(BASE_PATH + '/api/logs/decrypt', {
@@ -3447,32 +4223,77 @@ ${brandTitleHtml}
         if (data.success) {
           if (type === 'req') http.requestBody = data.decrypted;
           else http.responseBody = data.decrypted;
-          if (el) el.textContent = typeof data.decrypted === 'string' ? data.decrypted : JSON.stringify(data.decrypted, null, 2);
+
+          const formatted = typeof data.decrypted === 'string'
+            ? data.decrypted
+            : JSON.stringify(data.decrypted, null, 2);
+
+          if (el) el.innerHTML = syntaxHighlightJson(data.decrypted);
+
+          if (badge) {
+            badge.textContent = '🔓 Decrypted';
+            badge.className = 'badge badge-decrypted';
+            badge.style.display = 'inline-flex';
+          }
+
           if (btn) {
-            btn.textContent = '🔓 Decrypted';
-            btn.style.color = '#34d399';
+            btn.innerHTML = '<svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span>Decrypted</span>';
+            btn.classList.add('decrypted');
             btn.disabled = true;
           }
+
+          // Also update list view cards and drawers in DOM if they exist
+          const logId = currentModalEntry.id;
+          document.querySelectorAll('#' + logId + '_card_' + type + ', #' + logId + '_' + type).forEach(item => {
+            item.textContent = formatted;
+          });
+          document.querySelectorAll('[data-enc-badge="' + logId + '_' + type + '"]').forEach(b => {
+            b.textContent = '🔓 Decrypted';
+            b.className = 'badge badge-decrypted';
+          });
+
+          // Update Tab indicator
+          const stillEncrypted = isPayloadEncrypted(http.requestBody) || isPayloadEncrypted(http.responseBody);
+          const tabEnc = document.getElementById('lmTabEncIndicator');
+          if (tabEnc) {
+            if (!stillEncrypted) {
+              tabEnc.textContent = '🔓 Decrypted';
+              tabEnc.className = 'badge badge-decrypted';
+            }
+          }
+
           showToast('Payload decrypted successfully');
         } else {
           showToast(data.error || 'Decryption failed', true);
-          if (btn) btn.textContent = '🔓 Decrypt';
+          if (btn) {
+            btn.innerHTML = '<svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg><span>Decrypt</span>';
+            btn.disabled = false;
+          }
         }
       } catch (err) {
         showToast('Decryption error: ' + err.message, true);
-        if (btn) btn.textContent = '🔓 Decrypt';
+        if (btn) {
+          btn.innerHTML = '<svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg><span>Decrypt</span>';
+          btn.disabled = false;
+        }
       }
     }
 
     async function decryptPayloadInCard(logId, type, btnEl) {
-      const log = allLogs.find(l => l.id === logId);
+      const log = logsCache.find(l => l.id === logId);
       if (!log?.metadata?.http) return;
       const http = log.metadata.http;
-      const targetPayload = type === 'req' ? http.requestBody : http.responseBody;
-      if (!targetPayload) return;
+      const rawPayload = type === 'req' ? http.requestBody : http.responseBody;
+      if (!rawPayload) return;
+      const targetPayload = extractEncryptedPayload(rawPayload);
 
-      const preEl = document.getElementById(logId + '_card_' + type);
-      if (btnEl) btnEl.textContent = '...';
+      const preElements = document.querySelectorAll('#' + logId + '_card_' + type + ', #' + logId + '_' + type);
+      const badges = document.querySelectorAll('[data-enc-badge="' + logId + '_' + type + '"]');
+
+      if (btnEl) {
+        btnEl.textContent = '...';
+        btnEl.disabled = true;
+      }
 
       try {
         const res = await fetch(BASE_PATH + '/api/logs/decrypt', {
@@ -3484,20 +4305,60 @@ ${brandTitleHtml}
         if (data.success) {
           if (type === 'req') http.requestBody = data.decrypted;
           else http.responseBody = data.decrypted;
-          if (preEl) preEl.textContent = typeof data.decrypted === 'string' ? data.decrypted : JSON.stringify(data.decrypted, null, 2);
+
+          const formatted = typeof data.decrypted === 'string'
+            ? data.decrypted
+            : JSON.stringify(data.decrypted, null, 2);
+
+          preElements.forEach(el => {
+            el.textContent = formatted;
+          });
+
+          badges.forEach(b => {
+            b.textContent = '🔓 Decrypted';
+            b.className = 'badge badge-decrypted';
+          });
+
           if (btnEl) {
             btnEl.textContent = '🔓 Decrypted';
             btnEl.style.color = '#34d399';
+            btnEl.style.borderColor = 'rgba(52, 211, 153, 0.4)';
+            btnEl.style.background = 'rgba(16, 185, 129, 0.12)';
             btnEl.disabled = true;
           }
-          showToast('Payload decrypted');
+
+          // Also update modal if currently inspecting this log
+          if (currentModalEntry && currentModalEntry.id === logId) {
+            const mEl = type === 'req' ? document.getElementById('lmReqPayload') : document.getElementById('lmResPayload');
+            const mBadge = type === 'req' ? document.getElementById('lmReqEncBadge') : document.getElementById('lmResEncBadge');
+            const mBtn = type === 'req' ? document.getElementById('btnDecryptModalReq') : document.getElementById('btnDecryptModalRes');
+            if (mEl) mEl.innerHTML = syntaxHighlightJson(data.decrypted);
+            if (mBadge) {
+              mBadge.textContent = '🔓 Decrypted';
+              mBadge.className = 'badge badge-decrypted';
+              mBadge.style.display = 'inline-flex';
+            }
+            if (mBtn) {
+              mBtn.innerHTML = '<svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span>Decrypted</span>';
+              mBtn.classList.add('decrypted');
+              mBtn.disabled = true;
+            }
+          }
+
+          showToast('Payload decrypted successfully');
         } else {
           showToast(data.error || 'Decryption failed', true);
-          if (btnEl) btnEl.textContent = 'Decrypt';
+          if (btnEl) {
+            btnEl.textContent = '🔓 Decrypt';
+            btnEl.disabled = false;
+          }
         }
       } catch (err) {
         showToast('Decryption error: ' + err.message, true);
-        if (btnEl) btnEl.textContent = 'Decrypt';
+        if (btnEl) {
+          btnEl.textContent = '🔓 Decrypt';
+          btnEl.disabled = false;
+        }
       }
     }
 
@@ -3525,8 +4386,13 @@ ${brandTitleHtml}
         const statusClass = http.statusCode >= 500 ? 'status-5xx' : http.statusCode >= 400 ? 'status-4xx' : 'status-2xx';
         const methodClass = 'method-' + http.method;
 
-        const reqBodyStr = http.requestBody !== undefined ? escapeHtml(JSON.stringify(http.requestBody, null, 2)) : '<span style="color:#64748b;">(No Request Body)</span>';
-        const resBodyStr = http.responseBody !== undefined ? escapeHtml(JSON.stringify(http.responseBody, null, 2)) : '<span style="color:#64748b;">(No Response Body)</span>';
+        const hasReq = http.requestBody !== undefined && http.requestBody !== null;
+        const isReqEnc = isPayloadEncrypted(http.requestBody);
+        const hasRes = http.responseBody !== undefined && http.responseBody !== null;
+        const isResEnc = isPayloadEncrypted(http.responseBody);
+
+        const reqBodyStr = hasReq ? escapeHtml(typeof http.requestBody === 'string' ? http.requestBody : JSON.stringify(http.requestBody, null, 2)) : '<span style="color:#64748b;">(No Request Body)</span>';
+        const resBodyStr = hasRes ? escapeHtml(typeof http.responseBody === 'string' ? http.responseBody : JSON.stringify(http.responseBody, null, 2)) : '<span style="color:#64748b;">(No Response Body)</span>';
 
         drawer.innerHTML = 
           '<div class="http-inspector">' +
@@ -3540,15 +4406,29 @@ ${brandTitleHtml}
             '<div class="http-inspector-grid">' +
               '<div class="payload-card">' +
                 '<div class="payload-title-bar">' +
-                  '<span>Request Payload (Received)</span>' +
-                  '<button class="btn" style="padding:1px 5px; font-size:0.68rem;" onclick="copyPayload(this.dataset.target)" data-target="' + entry.id + '_req">Copy</button>' +
+                  '<span style="color:#38bdf8; display:flex; align-items:center; gap:0.35rem;">' +
+                    '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="M6 11l6 6 6-6"/><path d="M19 21H5"/></svg>' +
+                    '<span>Request Payload (' + escapeHtml(http.clientIp || 'client') + ')</span>' +
+                    (isReqEnc ? ' <span data-enc-badge="' + entry.id + '_req" class="badge badge-encrypted">🔒 Encrypted</span>' : '') +
+                  '</span>' +
+                  '<div style="display:flex; gap:4px;">' +
+                    (isReqEnc ? '<button class="btn btn-decrypt" style="padding:1px 6px; font-size:0.65rem;" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + entry.id + '" data-type="req">🔓 Decrypt</button>' : '') +
+                    (hasReq ? '<button class="btn" style="padding:1px 5px; font-size:0.68rem;" onclick="copyPayload(this.dataset.target)" data-target="' + entry.id + '_req">Copy</button>' : '') +
+                  '</div>' +
                 '</div>' +
                 '<pre id="' + entry.id + '_req" class="json-code">' + reqBodyStr + '</pre>' +
               '</div>' +
               '<div class="payload-card">' +
                 '<div class="payload-title-bar">' +
-                  '<span>Response Payload (Returned)</span>' +
-                  '<button class="btn" style="padding:1px 5px; font-size:0.68rem;" onclick="copyPayload(this.dataset.target)" data-target="' + entry.id + '_res">Copy</button>' +
+                  '<span style="color:#10b981; display:flex; align-items:center; gap:0.35rem;">' +
+                    '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 3v14"/><path d="M18 9l-6-6-6 6"/><path d="M5 21h14"/></svg>' +
+                    '<span>Response Payload (' + http.statusCode + ')</span>' +
+                    (isResEnc ? ' <span data-enc-badge="' + entry.id + '_res" class="badge badge-encrypted">🔒 Encrypted</span>' : '') +
+                  '</span>' +
+                  '<div style="display:flex; gap:4px;">' +
+                    (isResEnc ? '<button class="btn btn-decrypt" style="padding:1px 6px; font-size:0.65rem;" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + entry.id + '" data-type="res">🔓 Decrypt</button>' : '') +
+                    (hasRes ? '<button class="btn" style="padding:1px 5px; font-size:0.68rem;" onclick="copyPayload(this.dataset.target)" data-target="' + entry.id + '_res">Copy</button>' : '') +
+                  '</div>' +
                 '</div>' +
                 '<pre id="' + entry.id + '_res" class="json-code">' + resBodyStr + '</pre>' +
               '</div>' +
@@ -3746,9 +4626,9 @@ ${brandTitleHtml}
         row.className = 'api-row-item';
 
         const hasReq = h.requestBody !== undefined && h.requestBody !== null;
-        const isReqEnc = hasReq && (h.requestBody.encrypted || h.requestBody.__encrypted);
+        const isReqEnc = isPayloadEncrypted(h.requestBody);
         const hasRes = h.responseBody !== undefined && h.responseBody !== null;
-        const isResEnc = hasRes && (h.responseBody.encrypted || h.responseBody.__encrypted);
+        const isResEnc = isPayloadEncrypted(h.responseBody);
 
         const highlightedUrl = highlightSearch(h.url || e.message, s);
         const highlightedIp = highlightSearch(clientIp, s);
@@ -3771,29 +4651,29 @@ ${brandTitleHtml}
                 '<div class="payload-title-bar">' +
                   '<span style="color:#38bdf8; display:flex; align-items:center; gap:0.35rem;">' +
                     '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="M6 11l6 6 6-6"/><path d="M19 21H5"/></svg> Request Payload (' + escapeHtml(clientIp) + ')' +
-                    (isReqEnc ? ' <span class="badge" style="background:rgba(99,102,241,0.18); color:#a5b4fc; font-size:0.62rem; padding:1px 5px; border-radius:3px; border:1px solid rgba(99,102,241,0.3);">🔒 Encrypted</span>' : '') +
+                    (isReqEnc ? ' <span data-enc-badge="' + e.id + '_req" class="badge badge-encrypted">🔒 Encrypted</span>' : '') +
                   '</span>' +
                   '<div style="display:flex; gap:4px;">' +
-                    (isReqEnc ? '<button class="btn" style="padding:1px 6px; font-size:0.65rem; color:#818cf8; border-color:rgba(129,140,248,0.3);" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + e.id + '" data-type="req">🔓 Decrypt</button>' : '');
+                    (isReqEnc ? '<button class="btn btn-decrypt" style="padding:1px 6px; font-size:0.65rem;" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + e.id + '" data-type="req">🔓 Decrypt</button>' : '');
         if (hasReq) {
           rowInner += '<button class="btn" style="padding:1px 6px; font-size:0.65rem;" onclick="copyPayload(this.dataset.target)" data-target="' + e.id + '_card_req">Copy JSON</button>';
         }
         rowInner += '</div></div>' +
-          '<pre id="' + e.id + '_card_req" class="json-code">' + (hasReq ? highlightSearch(JSON.stringify(h.requestBody, null, 2), s) : '<span style="color:#64748b; font-style:italic;">(No Request Body)</span>') + '</pre>' +
+          '<pre id="' + e.id + '_card_req" class="json-code">' + (hasReq ? highlightSearch(typeof h.requestBody === 'string' ? h.requestBody : JSON.stringify(h.requestBody, null, 2), s) : '<span style="color:#64748b; font-style:italic;">(No Request Body)</span>') + '</pre>' +
         '</div>' +
         '<div class="payload-card">' +
           '<div class="payload-title-bar">' +
             '<span style="color:#10b981; display:flex; align-items:center; gap:0.35rem;">' +
               '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 3v14"/><path d="M18 9l-6-6-6 6"/><path d="M5 21h14"/></svg> Response Payload (' + statusCode + ')' +
-              (isResEnc ? ' <span class="badge" style="background:rgba(99,102,241,0.18); color:#a5b4fc; font-size:0.62rem; padding:1px 5px; border-radius:3px; border:1px solid rgba(99,102,241,0.3);">🔒 Encrypted</span>' : '') +
+              (isResEnc ? ' <span data-enc-badge="' + e.id + '_res" class="badge badge-encrypted">🔒 Encrypted</span>' : '') +
             '</span>' +
             '<div style="display:flex; gap:4px;">' +
-              (isResEnc ? '<button class="btn" style="padding:1px 6px; font-size:0.65rem; color:#818cf8; border-color:rgba(129,140,248,0.3);" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + e.id + '" data-type="res">🔓 Decrypt</button>' : '');
+              (isResEnc ? '<button class="btn btn-decrypt" style="padding:1px 6px; font-size:0.65rem;" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + e.id + '" data-type="res">🔓 Decrypt</button>' : '');
         if (hasRes) {
           rowInner += '<button class="btn" style="padding:1px 6px; font-size:0.65rem;" onclick="copyPayload(this.dataset.target)" data-target="' + e.id + '_card_res">Copy JSON</button>';
         }
         rowInner += '</div></div>' +
-          '<pre id="' + e.id + '_card_res" class="json-code">' + (hasRes ? highlightSearch(JSON.stringify(h.responseBody, null, 2), s) : '<span style="color:#64748b; font-style:italic;">(No Response Body)</span>') + '</pre>' +
+          '<pre id="' + e.id + '_card_res" class="json-code">' + (hasRes ? highlightSearch(typeof h.responseBody === 'string' ? h.responseBody : JSON.stringify(h.responseBody, null, 2), s) : '<span style="color:#64748b; font-style:italic;">(No Response Body)</span>') + '</pre>' +
         '</div>' +
         '</div>' +
         '<div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:0.6rem;">' +

@@ -91,7 +91,25 @@ export class TracerNestLogger {
     }
 
     this.alertDispatcher = new AlertDispatcher(this.sqlStore);
-    this.ringBuffer = new RingBuffer(effectiveConfig.bufferSize ?? 5000);
+    const shouldPersistLogs = effectiveConfig.persistLogs !== false;
+    this.ringBuffer = new RingBuffer(
+      effectiveConfig.bufferSize ?? 5000,
+      this.sqlStore,
+      shouldPersistLogs
+    );
+
+    // Automatically reload persisted terminal and HTTP logs upon server startup
+    if (shouldPersistLogs) {
+      try {
+        const persistedLogs = this.sqlStore.getRecentLogs(effectiveConfig.bufferSize ?? 5000);
+        if (persistedLogs.length > 0) {
+          this.ringBuffer.loadPersistedLogs(persistedLogs);
+        }
+      } catch (err: any) {
+        console.warn('[TracerNest-Logger] Notice: Could not reload persisted logs:', err?.message || err);
+      }
+    }
+
     this.streamManager = new StreamManager();
     this.auditLogger = new AuditLogger(1000, this.sqlStore);
     this.rateLimiter = new RateLimiter(effectiveConfig.rateLimit);
@@ -100,7 +118,8 @@ export class TracerNestLogger {
     this.ttlManager = new TTLManager({
       config: effectiveConfig.ttl,
       ringBuffer: this.ringBuffer,
-      sqlStore: this.sqlStore
+      sqlStore: this.sqlStore,
+      maxPersistedLogs: effectiveConfig.maxPersistedLogs
     });
 
     // 4. HTTP Application Request/Response Interceptor

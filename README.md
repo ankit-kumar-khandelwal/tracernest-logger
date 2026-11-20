@@ -497,7 +497,26 @@ const tracer = new TracerNestLogger({
 ```
 
 > [!TIP]
-> **Automatic Schema Migration**: When `dialect: 'mysql'` is enabled, TracerNest automatically checks and creates all required tables on startup (`tracenest_users`, `tracenest_alert_configs`, `tracenest_audit_logs`, and `tracenest_system_meta`) with `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`. Zero manual SQL migration scripts are required.
+> **Automatic Schema Migration**: When `dialect: 'mysql'` is enabled, TracerNest automatically checks and creates all required tables on startup (`tracenest_users`, `tracenest_alert_configs`, `tracenest_audit_logs`, `tracenest_logs`, and `tracenest_system_meta`) with `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`. Zero manual SQL migration scripts are required.
+
+---
+
+## Log Persistence & Restart Recovery
+
+By default, **all terminal logs (`process.stdout`, `process.stderr`, `console.log`, `console.error`) and intercepted HTTP request/response logs are automatically persisted** to your database (`SQLite` or `MySQL`).
+
+- **Persistence Across Restarts**: When your Node.js server restarts (or restarts in PM2, Docker, or Kubernetes), TracerNest automatically reloads the most recent historical logs into memory on startup so your telemetry timeline remains continuous without losing any past logs.
+- **Dual-Tier Performance**: High-frequency logs are appended to an in-memory circular ring buffer for sub-millisecond SSE streaming and instant dashboard rendering, while asynchronously persisting indexed records to SQLite/MySQL.
+- **Configurable Retention**: Historical logs are automatically bounded by `maxPersistedLogs` (default: 50,000) and TTL policies (e.g. auto-purging debug or 2xx logs after configured durations).
+
+```typescript
+const tracer = new TracerNestLogger({
+  persistLogs: true,        // Enabled by default (set false for memory-only mode)
+  maxPersistedLogs: 50000,  // Max historical logs to retain in database (default: 50,000)
+  bufferSize: 5000,         // In-memory hot buffer capacity (default: 5,000)
+  dataDir: './.tracernest'  // SQLite database and encryption key directory
+});
+```
 
 ---
 
@@ -510,6 +529,8 @@ const tracer = new TracerNestLogger({
   publicPath: '/api/tracernest',    // Optional external browser path (auto-detected if omitted)
   title: 'Production Telemetry',    // Dashboard browser tab title
   bufferSize: 5000,                 // Circular in-memory buffer capacity
+  persistLogs: true,                // Persist terminal logs (stdout/stderr) & HTTP logs across server restarts
+  maxPersistedLogs: 50000,          // Maximum historical logs retained in SQLite/MySQL
   dataDir: './.tracernest',         // SQLite database & encryption key folder
   initialAdmin: {                   // Optional pre-seeded admin (eliminates interactive web setup)
     username: 'admin',
@@ -625,7 +646,7 @@ TracerNest Logger follows [Semantic Versioning (SemVer)](https://semver.org/):
 - **Minor (1.X.0):** New features, performance enhancements, and backward-compatible additions.
 - **Patch (1.0.X):** Bug fixes, security hardening, and documentation updates.
 
-Current Release: **`1.7.7`**
+Current Release: **`1.8.2`**
 
 ---
 

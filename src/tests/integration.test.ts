@@ -2173,5 +2173,181 @@ test('Integration: Reverse Proxy Prefix Stripping, Dual Route Matching & Spellin
   }
 });
 
+test('Integration: List View Payload Decryption & Enhanced Full Inspect Log Modal UI', async () => {
+  const html = getDashboardHtml('/tracenest', 'TracerNest Console');
+
+  // 1. Verify absence of undefined allLogs reference in client script
+  assert.ok(!html.includes('allLogs.find'), 'Must not reference undefined allLogs in script');
+  assert.ok(html.includes('logsCache.find(l => l.id === logId)'), 'Must look up logs from logsCache');
+
+  // 2. Verify list view decryption capabilities in both API view and standard log drawer
+  assert.ok(html.includes('isPayloadEncrypted'), 'Must define isPayloadEncrypted helper');
+  assert.ok(html.includes('extractEncryptedPayload'), 'Must define extractEncryptedPayload helper');
+  assert.ok(html.includes('decryptPayloadInCard'), 'Must define decryptPayloadInCard function');
+  assert.ok(html.includes('data-enc-badge'), 'Must support dynamic encryption badge tracking in list view');
+
+  // 3. Verify enhanced Full Inspect Log Modal elements and modern UI structure
+  assert.ok(html.includes('Full Inspect Log'), 'Modal title must be Full Inspect Log');
+  assert.ok(html.includes('id="lmHttpBanner"'), 'Must have dedicated HTTP summary banner');
+  assert.ok(html.includes('id="lmHttpBannerMethod"'), 'Must display HTTP method in banner');
+  assert.ok(html.includes('id="lmHttpBannerStatus"'), 'Must display HTTP status code in banner');
+  assert.ok(html.includes('id="lmHttpBannerUrl"'), 'Must display full HTTP path/URL in banner');
+  assert.ok(html.includes('id="lmHttpBannerLatency"'), 'Must display latency pill in banner');
+  assert.ok(html.includes('id="lmHttpBannerIp"'), 'Must display client IP pill in banner');
+
+  // 4. Verify interactive modal tabs
+  assert.ok(html.includes('id="lmTabNav"'), 'Must contain modal tab navigation');
+  assert.ok(html.includes('id="lmTabBtnPayloads"'), 'Must contain Payloads tab button');
+  assert.ok(html.includes('id="lmTabBtnHeaders"'), 'Must contain HTTP Headers tab button');
+  assert.ok(html.includes('id="lmTabBtnDetails"'), 'Must contain Log Details tab button');
+  assert.ok(html.includes('id="lmTabBtnRaw"'), 'Must contain Raw JSON tab button');
+  assert.ok(html.includes('switchModalTab'), 'Must define switchModalTab function');
+
+  // 5. Verify payload cards and decrypt button in modal
+  assert.ok(html.includes('modal-payload-grid'), 'Must use responsive modal payload grid');
+  assert.ok(html.includes('modal-code-viewer'), 'Must use spacious dark monospace code viewer');
+  assert.ok(html.includes('id="btnDecryptModalReq"'), 'Must have request payload decrypt button');
+  assert.ok(html.includes('id="btnDecryptModalRes"'), 'Must have response payload decrypt button');
+  assert.ok(html.includes('id="lmHeadersContainer"'), 'Must have headers inspector container');
+
+  // 6. Verify full script compiles cleanly in V8 engine without any syntax errors
+  const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
+  assert.ok(scriptMatch, 'Must contain <script> tag');
+  assert.doesNotThrow(() => {
+    new vm.Script(scriptMatch[1]);
+  }, 'Dashboard client script with list view decryption and enhanced modal must compile cleanly in V8');
+});
+
+test('Integration: Persistent Terminal and HTTP Logs Across Server Restarts', async () => {
+  const testDataDir = './test_persist_logs_' + Date.now();
+  if (existsSync(testDataDir)) rmSync(testDataDir, { recursive: true, force: true });
+
+  try {
+    // 1. Initial server run: start logger instance
+    const tracer1 = new TracerNestLogger({
+      dataDir: testDataDir,
+      persistLogs: true,
+      interceptStdout: false,
+      interceptStderr: false,
+      interceptHttp: false
+    });
+
+    tracer1.ringBuffer.push({
+      id: 'test_term_1',
+      timestamp: Date.now() - 5000,
+      level: 'info',
+      source: 'stdout',
+      message: 'Server starting on port 3000',
+      raw: 'Server starting on port 3000'
+    });
+
+    tracer1.ringBuffer.push({
+      id: 'test_http_1',
+      timestamp: Date.now() - 2000,
+      level: 'info',
+      source: 'http',
+      message: 'HTTP [POST] /api/v1/login - 200 (15ms)',
+      raw: 'HTTP [POST] /api/v1/login - 200 (15ms)',
+      metadata: {
+        http: {
+          method: 'POST',
+          url: '/api/v1/login',
+          path: '/api/v1/login',
+          statusCode: 200,
+          durationMs: 15,
+          clientIp: '127.0.0.1'
+        }
+      }
+    });
+
+    assert.strictEqual(tracer1.ringBuffer.size(), 2, 'First instance should have 2 logs in memory');
+    assert.strictEqual(tracer1.sqlStore.getLogsCount(), 2, 'First instance should have 2 logs in database');
+
+    tracer1.stop();
+    tracer1.sqlStore.close();
+
+    // 2. Simulate server restart: new instance pointing to same persistent database
+    const tracer2 = new TracerNestLogger({
+      dataDir: testDataDir,
+      persistLogs: true,
+      interceptStdout: false,
+      interceptStderr: false,
+      interceptHttp: false
+    });
+
+    assert.strictEqual(tracer2.ringBuffer.size(), 2, 'Second instance must reload both persisted logs into ringBuffer upon restart');
+    const logs = tracer2.ringBuffer.toArray();
+    assert.strictEqual(logs[0].id, 'test_term_1');
+    assert.strictEqual(logs[0].message, 'Server starting on port 3000');
+    assert.strictEqual(logs[0].source, 'stdout');
+    assert.strictEqual(logs[1].id, 'test_http_1');
+    assert.strictEqual(logs[1].metadata?.http?.url, '/api/v1/login');
+    assert.strictEqual(logs[1].source, 'http');
+
+    // 3. New logs emitted on restarted server are appended and persisted
+    tracer2.ringBuffer.push({
+      id: 'test_term_2',
+      timestamp: Date.now(),
+      level: 'warn',
+      source: 'stderr',
+      message: 'High connection pool usage detected',
+      raw: 'High connection pool usage detected'
+    });
+
+    assert.strictEqual(tracer2.ringBuffer.size(), 3, 'Must contain 3 logs after appending new entry');
+    assert.strictEqual(tracer2.sqlStore.getLogsCount(), 3, 'Database must contain 3 persisted logs');
+
+    // 4. Verify TTL lifecycle: Logs must remain in database UNTIL TTL is completed
+    const now = Date.now();
+    tracer2.ringBuffer.push({
+      id: 'test_ttl_short',
+      timestamp: now,
+      expiresAt: now + 50, // TTL completes in 50ms
+      level: 'debug',
+      source: 'api',
+      message: 'Short-lived debug log',
+      raw: 'Short-lived debug log'
+    });
+
+    tracer2.ringBuffer.push({
+      id: 'test_ttl_long',
+      timestamp: now,
+      expiresAt: now + 3600000, // TTL completes in 1 hour
+      level: 'info',
+      source: 'stdout',
+      message: 'Long-lived info log',
+      raw: 'Long-lived info log'
+    });
+
+    // Before 50ms: TTL is NOT completed -> both logs must remain in database
+    tracer2.ttlManager.sweep();
+    assert.strictEqual(tracer2.sqlStore.getActiveLogsCount(now), 5, 'All 5 logs must remain in DB before TTL completes');
+    const queryBefore = tracer2.ringBuffer.query({ limit: 100 }, now);
+    assert.strictEqual(queryBefore.total, 5, 'All active logs must be queryable from DB');
+
+    // Wait 70ms for test_ttl_short TTL to complete
+    await new Promise(r => setTimeout(r, 70));
+
+    // After 70ms: test_ttl_short TTL is completed -> swept and purged
+    const swept = tracer2.ttlManager.sweep();
+    assert.ok(swept >= 1, 'Should have purged at least the expired log');
+    assert.strictEqual(tracer2.sqlStore.getActiveLogsCount(), 4, 'Only 4 unexpired logs must remain in DB');
+    const queryAfter = tracer2.ringBuffer.query({ limit: 100 });
+    assert.strictEqual(queryAfter.total, 4, 'Only unexpired logs returned from DB');
+    assert.ok(queryAfter.logs.some(l => l.id === 'test_ttl_long'), 'Log with incomplete TTL must still be in DB');
+    assert.ok(!queryAfter.logs.some(l => l.id === 'test_ttl_short'), 'Log with completed TTL must be purged from DB');
+
+    // 5. Test ringBuffer.clear() clears database as well
+    tracer2.ringBuffer.clear();
+    assert.strictEqual(tracer2.ringBuffer.size(), 0);
+    assert.strictEqual(tracer2.sqlStore.getLogsCount(), 0);
+
+    tracer2.stop();
+    tracer2.sqlStore.close();
+  } finally {
+    if (existsSync(testDataDir)) rmSync(testDataDir, { recursive: true, force: true });
+  }
+});
+
 
 

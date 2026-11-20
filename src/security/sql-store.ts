@@ -21,9 +21,10 @@ if (typeof process !== 'undefined' && typeof process.emitWarning === 'function')
 
 // Safely load native DatabaseSync constructor with warning suppressed
 const NativeDatabaseSync = require('node:sqlite').DatabaseSync as typeof DatabaseSync;
-import { AuditLogEntry, DatabaseDialect, ExcludedRouteRule, MySqlConfig, Role, User, UserProfile } from '../types';
+import { AuditLogEntry, DatabaseDialect, ExcludedRouteRule, LogEntry, LogLevel, LogQueryOptions, LogQueryResult, MySqlConfig, Role, TTLRule, User, UserProfile } from '../types';
 import { FastCrypto, EncryptedPayload } from './fast-crypto';
 import { CryptoSecurity } from './crypto';
+import { SafeRegex } from './safe-regex';
 
 export interface StoredAlertConfig {
   id: string;
@@ -59,6 +60,8 @@ export class SqlStore {
   public readonly tableAlerts: string;
   public readonly tableAudit: string;
   public readonly tableMeta: string;
+  public readonly tableLogs: string;
+  private stmtInsertLog?: StatementSync;
 
   constructor(options?: SqlStoreOptions) {
     const dataDir = options?.dataDir || (existsSync('./.tracernest') ? './.tracernest' : (existsSync('./tracernest') ? './tracernest' : './.tracernest'));
@@ -109,6 +112,7 @@ export class SqlStore {
     this.tableAlerts = `${this.tablePrefix}alert_configs`;
     this.tableAudit = `${this.tablePrefix}audit_logs`;
     this.tableMeta = `${this.tablePrefix}system_meta`;
+    this.tableLogs = `${this.tablePrefix}logs`;
 
     // Ensure parent directories exist
     const sqliteDir = dirname(this.sqliteFilePath);
@@ -216,6 +220,23 @@ export class SqlStore {
         ip TEXT,
         details TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS ${this.tableLogs} (
+        id TEXT PRIMARY KEY,
+        timestamp INTEGER NOT NULL,
+        expires_at INTEGER,
+        level TEXT NOT NULL,
+        source TEXT NOT NULL,
+        message TEXT NOT NULL,
+        raw TEXT,
+        metadata TEXT,
+        tags TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_${this.tableLogs}_ts ON ${this.tableLogs} (timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableLogs}_level ON ${this.tableLogs} (level);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableLogs}_source ON ${this.tableLogs} (source);
+      CREATE INDEX IF NOT EXISTS idx_${this.tableLogs}_expires ON ${this.tableLogs} (expires_at);
     `);
 
     // Ensure must_change_password and token_version columns exist if upgrading existing database
@@ -315,6 +336,24 @@ export class SqlStore {
           action VARCHAR(64) NOT NULL,
           ip VARCHAR(64) NULL,
           details TEXT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS ${this.tableLogs} (
+          id VARCHAR(64) PRIMARY KEY,
+          timestamp BIGINT NOT NULL,
+          expires_at BIGINT NULL,
+          level VARCHAR(16) NOT NULL,
+          source VARCHAR(32) NOT NULL,
+          message TEXT NOT NULL,
+          raw MEDIUMTEXT NULL,
+          metadata MEDIUMTEXT NULL,
+          tags TEXT NULL,
+          INDEX idx_logs_ts (timestamp DESC),
+          INDEX idx_logs_level (level),
+          INDEX idx_logs_source (source),
+          INDEX idx_logs_expires (expires_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
       `);
     } catch (err: any) {
@@ -702,6 +741,405 @@ export class SqlStore {
     return { entries, total: totalRow.count };
   }
 
+  // --- Persistent Telemetry Logs (stdout, stderr, http, api) ---
+
+  public saveLog(entry: LogEntry): void {
+    try {
+      const metaStr = entry.metadata ? JSON.stringify(entry.metadata) : null;
+      const tagsStr = entry.tags ? JSON.stringify(entry.tags) : null;
+      const rawStr = entry.raw || entry.message || '';
+
+      if (!this.stmtInsertLog) {
+        this.stmtInsertLog = this.db.prepare(`
+          INSERT OR REPLACE INTO ${this.tableLogs}
+          (id, timestamp, expires_at, level, source, message, raw, metadata, tags)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+      }
+
+      this.stmtInsertLog.run(
+        entry.id,
+        entry.timestamp,
+        entry.expiresAt ?? null,
+        entry.level,
+        entry.source,
+        entry.message,
+        rawStr,
+        metaStr,
+        tagsStr
+      );
+
+      this.executeMySqlQuery(`
+        INSERT INTO ${this.tableLogs}
+        (id, timestamp, expires_at, level, source, message, raw, metadata, tags)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          timestamp = VALUES(timestamp),
+          expires_at = VALUES(expires_at),
+          level = VALUES(level),
+          source = VALUES(source),
+          message = VALUES(message),
+          raw = VALUES(raw),
+          metadata = VALUES(metadata),
+          tags = VALUES(tags)
+      `, [
+        entry.id,
+        entry.timestamp,
+        entry.expiresAt ?? null,
+        entry.level,
+        entry.source,
+        entry.message,
+        rawStr,
+        metaStr,
+        tagsStr
+      ]);
+    } catch {
+      // Non-blocking so logging operations never throw or disrupt the application
+    }
+  }
+
+  public getRecentLogs(limit = 5000, now = Date.now()): LogEntry[] {
+    try {
+      // Subquery grabs the latest unexpired logs (DESC), outer query re-sorts chronologically (ASC)
+      // so they can be pushed in order into the in-memory circular buffer on server startup
+      const rows = this.db.prepare(`
+        SELECT * FROM (
+          SELECT * FROM ${this.tableLogs}
+          WHERE expires_at IS NULL OR expires_at > ?
+          ORDER BY timestamp DESC
+          LIMIT ?
+        ) ORDER BY timestamp ASC
+      `).all(now, limit) as any[];
+
+      return rows.map(r => {
+        let metadata: any = undefined;
+        if (r.metadata) {
+          try {
+            metadata = JSON.parse(r.metadata);
+          } catch {
+            metadata = { raw: r.metadata };
+          }
+        }
+        let tags: string[] | undefined = undefined;
+        if (r.tags) {
+          try {
+            tags = JSON.parse(r.tags);
+          } catch {}
+        }
+        return {
+          id: r.id,
+          timestamp: Number(r.timestamp),
+          expiresAt: r.expires_at ? Number(r.expires_at) : undefined,
+          level: r.level as LogLevel,
+          source: r.source as any,
+          message: r.message,
+          raw: r.raw || r.message,
+          metadata,
+          tags
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  public purgeExpiredLogs(now = Date.now()): number {
+    try {
+      const res = this.db.prepare(`
+        DELETE FROM ${this.tableLogs}
+        WHERE expires_at IS NOT NULL AND expires_at <= ?
+      `).run(now) as any;
+
+      this.executeMySqlQuery(`
+        DELETE FROM ${this.tableLogs}
+        WHERE expires_at IS NOT NULL AND expires_at <= ?
+      `, [now]);
+
+      return res?.changes ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  public clearLogs(): void {
+    try {
+      this.db.exec(`DELETE FROM ${this.tableLogs}`);
+      this.executeMySqlQuery(`TRUNCATE TABLE ${this.tableLogs}`);
+    } catch {}
+  }
+
+  public getLogsCount(): number {
+    try {
+      const row = this.db.prepare(`SELECT COUNT(*) as count FROM ${this.tableLogs}`).get() as { count: number };
+      return row?.count ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  public getActiveLogsCount(now = Date.now()): number {
+    try {
+      const row = this.db.prepare(`
+        SELECT COUNT(*) as count FROM ${this.tableLogs}
+        WHERE expires_at IS NULL OR expires_at > ?
+      `).get(now) as any;
+      return Number(row?.count ?? 0);
+    } catch {
+      return 0;
+    }
+  }
+
+  public getLogCounts(now = Date.now()): {
+    all: number;
+    error: number;
+    warn: number;
+    info: number;
+    debug: number;
+    http: number;
+  } {
+    try {
+      const row = this.db.prepare(`
+        SELECT
+          COUNT(*) as all_count,
+          SUM(CASE WHEN level = 'error' THEN 1 ELSE 0 END) as error_count,
+          SUM(CASE WHEN level = 'warn' THEN 1 ELSE 0 END) as warn_count,
+          SUM(CASE WHEN level = 'info' THEN 1 ELSE 0 END) as info_count,
+          SUM(CASE WHEN level = 'debug' THEN 1 ELSE 0 END) as debug_count,
+          SUM(CASE WHEN source = 'http' OR metadata LIKE '%"http"%' THEN 1 ELSE 0 END) as http_count
+        FROM ${this.tableLogs}
+        WHERE expires_at IS NULL OR expires_at > ?
+      `).get(now) as any;
+
+      return {
+        all: Number(row?.all_count ?? 0),
+        error: Number(row?.error_count ?? 0),
+        warn: Number(row?.warn_count ?? 0),
+        info: Number(row?.info_count ?? 0),
+        debug: Number(row?.debug_count ?? 0),
+        http: Number(row?.http_count ?? 0)
+      };
+    } catch {
+      return { all: 0, error: 0, warn: 0, info: 0, debug: 0, http: 0 };
+    }
+  }
+
+  public getAllActiveLogs(now = Date.now(), limit = 10000): LogEntry[] {
+    try {
+      const rows = this.db.prepare(`
+        SELECT * FROM ${this.tableLogs}
+        WHERE expires_at IS NULL OR expires_at > ?
+        ORDER BY timestamp ASC
+        LIMIT ?
+      `).all(now, limit) as any[];
+
+      return rows.map(r => {
+        let metadata: any = undefined;
+        if (r.metadata) {
+          try { metadata = JSON.parse(r.metadata); } catch { metadata = { raw: r.metadata }; }
+        }
+        let tags: string[] | undefined = undefined;
+        if (r.tags) {
+          try { tags = JSON.parse(r.tags); } catch {}
+        }
+        return {
+          id: r.id,
+          timestamp: Number(r.timestamp),
+          expiresAt: r.expires_at ? Number(r.expires_at) : undefined,
+          level: r.level as LogLevel,
+          source: r.source as any,
+          message: r.message,
+          raw: r.raw || r.message,
+          metadata,
+          tags
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  public queryLogs(options: LogQueryOptions = {}, now = Date.now()): LogQueryResult {
+    const {
+      search,
+      isRegex,
+      level,
+      from,
+      to,
+      source,
+      limit = 100,
+      offset = 0,
+      order = 'desc',
+      sortBy = 'timestamp'
+    } = options;
+
+    const baseWhere = ['(expires_at IS NULL OR expires_at > ?)'];
+    const params: any[] = [now];
+
+    if (level && level !== 'all') {
+      baseWhere.push('level = ?');
+      params.push(level);
+    }
+
+    if (source && source !== 'all') {
+      baseWhere.push('source = ?');
+      params.push(source);
+    }
+
+    if (from !== undefined) {
+      baseWhere.push('timestamp >= ?');
+      params.push(from);
+    }
+
+    if (to !== undefined) {
+      baseWhere.push('timestamp <= ?');
+      params.push(to);
+    }
+
+    let regex: RegExp | null = null;
+    if (search && search.trim().length > 0) {
+      const s = search.trim();
+      if (isRegex) {
+        regex = SafeRegex.safeCompile(s, 'i');
+        if (!regex) {
+          baseWhere.push('(message LIKE ? OR raw LIKE ? OR metadata LIKE ?)');
+          const sParam = `%${s}%`;
+          params.push(sParam, sParam, sParam);
+        }
+      } else {
+        baseWhere.push('(message LIKE ? OR raw LIKE ? OR metadata LIKE ?)');
+        const sParam = `%${s}%`;
+        params.push(sParam, sParam, sParam);
+      }
+    }
+
+    const whereClause = baseWhere.join(' AND ');
+    const counts = this.getLogCounts(now);
+
+    if (regex) {
+      const allRows = this.db.prepare(`
+        SELECT * FROM ${this.tableLogs}
+        WHERE ${whereClause}
+        ORDER BY timestamp ${order === 'asc' ? 'ASC' : 'DESC'}
+      `).all(...params) as any[];
+
+      const matched: LogEntry[] = [];
+      for (const r of allRows) {
+        let metadata: any = undefined;
+        if (r.metadata) {
+          try { metadata = JSON.parse(r.metadata); } catch { metadata = { raw: r.metadata }; }
+        }
+        let tags: string[] | undefined = undefined;
+        if (r.tags) {
+          try { tags = JSON.parse(r.tags); } catch {}
+        }
+        const entry: LogEntry = {
+          id: r.id,
+          timestamp: Number(r.timestamp),
+          expiresAt: r.expires_at ? Number(r.expires_at) : undefined,
+          level: r.level as LogLevel,
+          source: r.source as any,
+          message: r.message,
+          raw: r.raw || r.message,
+          metadata,
+          tags
+        };
+
+        const matchesMsg = SafeRegex.test(regex, entry.message);
+        const matchesUrl = entry.metadata?.http?.url ? SafeRegex.test(regex, entry.metadata.http.url) : false;
+        const matchesIp = entry.metadata?.http?.clientIp ? SafeRegex.test(regex, entry.metadata.http.clientIp) : false;
+        const matchesMeta = entry.metadata ? SafeRegex.test(regex, JSON.stringify(entry.metadata)) : false;
+
+        if (matchesMsg || matchesUrl || matchesIp || matchesMeta) {
+          matched.push(entry);
+        }
+      }
+
+      if (sortBy === 'level') {
+        const levelRank: Record<LogLevel, number> = { error: 4, warn: 3, info: 2, debug: 1 };
+        matched.sort((a, b) => {
+          const diff = (levelRank[b.level] || 0) - (levelRank[a.level] || 0);
+          return order === 'asc' ? -diff : diff;
+        });
+      }
+
+      const total = matched.length;
+      const paginated = matched.slice(offset, offset + limit);
+      return { logs: paginated, total, offset, limit, counts };
+    }
+
+    const countRow = this.db.prepare(`
+      SELECT COUNT(*) as total FROM ${this.tableLogs}
+      WHERE ${whereClause}
+    `).get(...params) as { total: number };
+
+    const total = countRow?.total ?? 0;
+    const orderDirection = order === 'asc' ? 'ASC' : 'DESC';
+    let orderByClause = `timestamp ${orderDirection}`;
+    if (sortBy === 'level') {
+      orderByClause = `CASE level WHEN 'error' THEN 4 WHEN 'warn' THEN 3 WHEN 'info' THEN 2 WHEN 'debug' THEN 1 ELSE 0 END ${orderDirection}, timestamp DESC`;
+    }
+
+    const queryParams = [...params, limit, offset];
+    const rows = this.db.prepare(`
+      SELECT * FROM ${this.tableLogs}
+      WHERE ${whereClause}
+      ORDER BY ${orderByClause}
+      LIMIT ? OFFSET ?
+    `).all(...queryParams) as any[];
+
+    const logs: LogEntry[] = rows.map(r => {
+      let metadata: any = undefined;
+      if (r.metadata) {
+        try { metadata = JSON.parse(r.metadata); } catch { metadata = { raw: r.metadata }; }
+      }
+      let tags: string[] | undefined = undefined;
+      if (r.tags) {
+        try { tags = JSON.parse(r.tags); } catch {}
+      }
+      return {
+        id: r.id,
+        timestamp: Number(r.timestamp),
+        expiresAt: r.expires_at ? Number(r.expires_at) : undefined,
+        level: r.level as LogLevel,
+        source: r.source as any,
+        message: r.message,
+        raw: r.raw || r.message,
+        metadata,
+        tags
+      };
+    });
+
+    return { logs, total, offset, limit, counts };
+  }
+
+  public applyRuleToExistingLogs(rule: TTLRule): void {
+    try {
+      const conditions: string[] = ['expires_at IS NULL'];
+      const params: any[] = [];
+
+      if (rule.level && rule.level !== 'all') {
+        conditions.push('level = ?');
+        params.push(rule.level);
+      }
+      if (rule.source && rule.source !== 'all') {
+        conditions.push('source = ?');
+        params.push(rule.source);
+      }
+      if (rule.pattern && !rule.compiledRegex) {
+        conditions.push('(message LIKE ? OR metadata LIKE ?)');
+        const p = `%${rule.pattern.trim()}%`;
+        params.push(p, p);
+      }
+
+      const ttlMs = rule.ttlSeconds * 1000;
+      this.db.prepare(`
+        UPDATE ${this.tableLogs}
+        SET expires_at = timestamp + ?
+        WHERE ${conditions.join(' AND ')}
+      `).run(ttlMs, ...params);
+    } catch {}
+  }
+
   public getExcludedRoutes(): ExcludedRouteRule[] {
     try {
       if (this.dialect === 'sqlite') {
@@ -795,11 +1233,24 @@ export class SqlStore {
       sqlContent += `  details TEXT\n`;
       sqlContent += `);\n\n`;
 
+      sqlContent += `CREATE TABLE IF NOT EXISTS ${this.tableLogs} (\n`;
+      sqlContent += `  id TEXT PRIMARY KEY,\n`;
+      sqlContent += `  timestamp INTEGER NOT NULL,\n`;
+      sqlContent += `  expires_at INTEGER,\n`;
+      sqlContent += `  level TEXT NOT NULL,\n`;
+      sqlContent += `  source TEXT NOT NULL,\n`;
+      sqlContent += `  message TEXT NOT NULL,\n`;
+      sqlContent += `  raw TEXT,\n`;
+      sqlContent += `  metadata TEXT,\n`;
+      sqlContent += `  tags TEXT\n`;
+      sqlContent += `);\n\n`;
+
       sqlContent += `-- --- MySQL Equivalent DDL (Copy-pasteable for MySQL Workbench / CLI) ---\n`;
       sqlContent += `-- CREATE TABLE IF NOT EXISTS ${this.tableMeta} (\`key\` VARCHAR(191) PRIMARY KEY, \`value\` TEXT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n`;
       sqlContent += `-- CREATE TABLE IF NOT EXISTS ${this.tableUsers} (id VARCHAR(64) PRIMARY KEY, username VARCHAR(191) UNIQUE NOT NULL, password_hash VARCHAR(255) NOT NULL, salt VARCHAR(64) NOT NULL, role VARCHAR(32) NOT NULL, created_at BIGINT NOT NULL, last_login_at BIGINT NULL, must_change_password TINYINT(1) NOT NULL DEFAULT 0, token_version INT NOT NULL DEFAULT 1) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n`;
       sqlContent += `-- CREATE TABLE IF NOT EXISTS ${this.tableAlerts} (id VARCHAR(64) PRIMARY KEY, channel VARCHAR(32) UNIQUE NOT NULL, enabled TINYINT(1) NOT NULL, level_threshold VARCHAR(32) NOT NULL, ciphertext TEXT NOT NULL, iv VARCHAR(64) NOT NULL, auth_tag VARCHAR(64) NOT NULL, salt VARCHAR(64) NOT NULL, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n`;
-      sqlContent += `-- CREATE TABLE IF NOT EXISTS ${this.tableAudit} (id VARCHAR(64) PRIMARY KEY, timestamp BIGINT NOT NULL, user_id VARCHAR(64) NULL, username VARCHAR(191) NULL, action VARCHAR(64) NOT NULL, ip VARCHAR(64) NULL, details TEXT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n\n`;
+      sqlContent += `-- CREATE TABLE IF NOT EXISTS ${this.tableAudit} (id VARCHAR(64) PRIMARY KEY, timestamp BIGINT NOT NULL, user_id VARCHAR(64) NULL, username VARCHAR(191) NULL, action VARCHAR(64) NOT NULL, ip VARCHAR(64) NULL, details TEXT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n`;
+      sqlContent += `-- CREATE TABLE IF NOT EXISTS ${this.tableLogs} (id VARCHAR(64) PRIMARY KEY, timestamp BIGINT NOT NULL, expires_at BIGINT NULL, level VARCHAR(16) NOT NULL, source VARCHAR(32) NOT NULL, message TEXT NOT NULL, raw MEDIUMTEXT NULL, metadata MEDIUMTEXT NULL, tags TEXT NULL, INDEX idx_logs_ts (timestamp DESC), INDEX idx_logs_level (level), INDEX idx_logs_source (source)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n\n`;
 
       if (users.length > 0) {
         sqlContent += `-- Persisted User Accounts (Hashed & Salted)\n`;
