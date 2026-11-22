@@ -69,51 +69,11 @@ export class SqlStore {
 
   constructor(options?: SqlStoreOptions) {
     const userSpecifiedDir = options?.dataDir || options?.storageDir || options?.folder || options?.initFolder;
-    const dataDir =
-      userSpecifiedDir ||
-      (existsSync('./.tracernest') ? './.tracernest' : (existsSync('./tracernest') ? './tracernest' : './.tracernest'));
+    const dataDir = userSpecifiedDir || (existsSync('./.tracernest') ? './.tracernest' : './.tracernest');
 
-    this.sqliteFilePath =
-      options?.sqliteFilePath ||
-      (userSpecifiedDir
-        ? `${dataDir}/tracernest-logger.sqlite`
-        : existsSync(`${dataDir}/tracernest-logger.sqlite`)
-        ? `${dataDir}/tracernest-logger.sqlite`
-        : existsSync('./tracernest/tracernest-logger.sqlite')
-        ? './tracernest/tracernest-logger.sqlite'
-        : existsSync('./tracernest-logger.sqlite')
-        ? './tracernest-logger.sqlite'
-        : existsSync('./tracenest.sqlite')
-        ? './tracenest.sqlite'
-        : existsSync('./logvault.sqlite')
-        ? './logvault.sqlite'
-        : `${dataDir}/tracernest-logger.sqlite`);
-
-    this.sqlFilePath =
-      options?.sqlFilePath ||
-      (userSpecifiedDir
-        ? `${dataDir}/tracernest-logger.sql`
-        : existsSync(`${dataDir}/tracernest-logger.sql`)
-        ? `${dataDir}/tracernest-logger.sql`
-        : existsSync('./tracernest/tracernest-logger.sql')
-        ? './tracernest/tracernest-logger.sql'
-        : existsSync('./tracernest-logger.sql')
-        ? './tracernest-logger.sql'
-        : existsSync('./tracenest.sql')
-        ? './tracenest.sql'
-        : existsSync('./logvault.sql')
-        ? './logvault.sql'
-        : `${dataDir}/tracernest-logger.sql`);
-
-    this.keyFilePath =
-      options?.keyFilePath ||
-      (userSpecifiedDir
-        ? `${dataDir}/.master.key`
-        : existsSync(`${dataDir}/.master.key`)
-        ? `${dataDir}/.master.key`
-        : existsSync(`${dataDir}/tracernest.key`)
-        ? `${dataDir}/tracernest.key`
-        : `${dataDir}/.master.key`);
+    this.sqliteFilePath = options?.sqliteFilePath || join(dataDir, 'tracernest-logger.sqlite');
+    this.sqlFilePath = options?.sqlFilePath || join(dataDir, 'tracernest-logger.sql');
+    this.keyFilePath = options?.keyFilePath || join(dataDir, '.master.key');
 
     this.dialect = options?.dialect || 'sqlite';
     this.mysqlConfig = options?.mysql;

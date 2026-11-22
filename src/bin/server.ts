@@ -57,12 +57,12 @@ Examples:
     process.exit(0);
   }
 
-  const port = parseInt(getArg('--port', '-p') || process.env.PORT || '8001', 10);
+  const port = parseInt(getArg('--port', '-p') || '8001', 10);
   const host = getArg('--host') || '0.0.0.0';
   const mountPath = getArg('--path') || '/tracernest';
   const folder = getArg('--folder') || getArg('--dir', '-d') || './.tracernest';
-  const dialect = (getArg('--dialect') as any) || (process.env.DB_DIALECT === 'mysql' ? 'mysql' : 'sqlite');
-  const masterKey = getArg('--key') || process.env.TRACERNEST_SECRET || process.env.TRACERNEST_KEY;
+  const dialect = (getArg('--dialect') as any) === 'mysql' ? 'mysql' : 'sqlite';
+  const masterKey = getArg('--key');
   const title = getArg('--title') || 'TracerNest Telemetry';
   const tablePrefix = getArg('--prefix') || 'tracenest_';
 

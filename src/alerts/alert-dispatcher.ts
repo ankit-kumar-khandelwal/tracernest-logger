@@ -53,7 +53,9 @@ export class AlertDispatcher {
   }
 
   /**
-   * Pure Node.js zero-dependency SMTP client
+   * Pure Node.js zero-dependency secure SMTP client
+   * Implements strict CRLF validation, RFC 5321 dot-stuffing, mandatory TLS for credentials,
+   * and strict TLS certificate verification.
    */
   public async sendEmail(config: {
     host: string;
@@ -66,15 +68,69 @@ export class AlertDispatcher {
     subject: string;
     body: string;
   }): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const port = Number(config.port) || (config.secure ? 465 : 587);
-      const isDirectTls = config.secure || port === 465;
+    // 1. CRLF Injection Guard & Sanitization
+    const sanitizeHeader = (name: string, val: string): string => {
+      if (!val || typeof val !== 'string') {
+        throw new Error(`SMTP field '${name}' is required`);
+      }
+      if (/[\r\n]/.test(val)) {
+        throw new Error(`CRLF injection attempt detected in SMTP field '${name}'`);
+      }
+      return val.trim();
+    };
 
+    const cleanHost = sanitizeHeader('host', config.host);
+    const cleanFrom = sanitizeHeader('from', config.from);
+    const cleanSubject = sanitizeHeader('subject', config.subject);
+
+    // Parse and validate recipient addresses
+    const rawRecipients = sanitizeHeader('to', config.to);
+    const recipients = rawRecipients
+      .split(',')
+      .map(r => r.trim())
+      .filter(Boolean);
+
+    if (recipients.length === 0) {
+      throw new Error('At least one recipient address is required in SMTP to field');
+    }
+
+    for (const r of recipients) {
+      if (/[\r\n<>"]/.test(r)) {
+        throw new Error(`Invalid characters detected in recipient address '${r}'`);
+      }
+    }
+
+    // 2. RFC 5321 Dot-Stuffing on Message Body
+    // Any line beginning with a dot '.' in message data must be prepended with another dot '..'
+    const sanitizedBody = (config.body || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .split('\n')
+      .map(line => line.startsWith('.') ? '.' + line : line)
+      .join('\r\n');
+
+    const port = Number(config.port) || (config.secure ? 465 : 587);
+    const isDirectTls = config.secure || port === 465;
+    const hasAuth = Boolean(config.user && config.password);
+
+    return new Promise((resolve, reject) => {
       let socket: any;
-      if (isDirectTls) {
-        socket = tlsConnect({ host: config.host, port, rejectUnauthorized: false });
-      } else {
-        socket = netConnect({ host: config.host, port });
+      let isTlsEncrypted = isDirectTls;
+
+      try {
+        if (isDirectTls) {
+          // Direct TLS: strictly enforce certificate validation and SNI servername
+          socket = tlsConnect({
+            host: cleanHost,
+            port,
+            rejectUnauthorized: true,
+            servername: cleanHost
+          });
+        } else {
+          socket = netConnect({ host: cleanHost, port });
+        }
+      } catch (err) {
+        return reject(err);
       }
 
       socket.setTimeout(10000); // 10s timeout
@@ -86,7 +142,7 @@ export class AlertDispatcher {
         socket.write(cmd + '\r\n');
       };
 
-      socket.on('data', (chunk: Buffer) => {
+      const handleData = (chunk: Buffer) => {
         buffer += chunk.toString();
         const lines = buffer.split('\r\n');
         buffer = lines.pop() || '';
@@ -100,17 +156,51 @@ export class AlertDispatcher {
           if (line[3] === '-') continue;
 
           if (step === 0 && (code === 220 || code === 200)) {
-            // Connected
-            send(`EHLO ${config.host}`);
+            // Connected: Send initial EHLO
+            send(`EHLO ${cleanHost}`);
             step = 1;
           } else if (step === 1 && code === 250) {
-            if (config.user && config.password) {
+            if (hasAuth && !isTlsEncrypted) {
+              // Never transmit credentials over unencrypted connection! Enforce STARTTLS
+              send('STARTTLS');
+              step = 10;
+            } else if (hasAuth) {
+              // Connection already TLS encrypted: proceed to AUTH LOGIN
               send('AUTH LOGIN');
               step = 2;
             } else {
-              send(`MAIL FROM:<${config.from}>`);
+              // No credentials required
+              send(`MAIL FROM:<${cleanFrom}>`);
               step = 4;
             }
+          } else if (step === 10 && code === 220) {
+            // STARTTLS accepted: upgrade plaintext socket to secure TLS with certificate validation
+            socket.removeAllListeners('data');
+            const tlsSocket = tlsConnect({
+              socket,
+              host: cleanHost,
+              rejectUnauthorized: true,
+              servername: cleanHost
+            });
+
+            tlsSocket.setTimeout(10000);
+            tlsSocket.on('data', handleData);
+            tlsSocket.on('error', (err: any) => reject(err));
+            tlsSocket.on('timeout', () => {
+              tlsSocket.destroy();
+              reject(new Error('SMTP Connection timed out during TLS handshake'));
+            });
+
+            socket = tlsSocket;
+            isTlsEncrypted = true;
+
+            // Per RFC 3207: must re-issue EHLO after STARTTLS
+            send(`EHLO ${cleanHost}`);
+            step = 11;
+          } else if (step === 11 && code === 250) {
+            // Re-EHLO complete under TLS: proceed to AUTH LOGIN
+            send('AUTH LOGIN');
+            step = 2;
           } else if (step === 2 && code === 334) {
             // Username prompt
             send(Buffer.from(config.user || '').toString('base64'));
@@ -121,26 +211,26 @@ export class AlertDispatcher {
             step = 35;
           } else if (step === 35 && (code === 235 || code === 250)) {
             // Auth success
-            send(`MAIL FROM:<${config.from}>`);
+            send(`MAIL FROM:<${cleanFrom}>`);
             step = 4;
           } else if (step === 4 && code === 250) {
-            // Recipients (can be comma-separated)
-            const recipients = config.to.split(',').map(r => r.trim()).filter(Boolean);
+            // Recipients
             for (const r of recipients) {
               send(`RCPT TO:<${r}>`);
             }
             send('DATA');
             step = 5;
           } else if (step === 5 && code === 354) {
-            // Send payload
+            // Send payload with dot-stuffed body and strictly validated headers
             const rawMessage = [
-              `From: ${config.from}`,
-              `To: ${config.to}`,
-              `Subject: ${config.subject}`,
+              `From: <${cleanFrom}>`,
+              `To: ${recipients.map(r => `<${r}>`).join(', ')}`,
+              `Subject: ${cleanSubject}`,
               'MIME-Version: 1.0',
               'Content-Type: text/plain; charset=UTF-8',
+              'Content-Transfer-Encoding: 8bit',
               '',
-              config.body,
+              sanitizedBody,
               '.'
             ].join('\r\n');
 
@@ -156,8 +246,9 @@ export class AlertDispatcher {
             reject(new Error(`SMTP Error [${code}]: ${line}`));
           }
         }
-      });
+      };
 
+      socket.on('data', handleData);
       socket.on('error', (err: any) => reject(err));
       socket.on('timeout', () => {
         socket.destroy();
@@ -168,6 +259,7 @@ export class AlertDispatcher {
 
   /**
    * Sends Microsoft Teams Adaptive Card / MessageCard via Incoming Webhook
+   * Validates destination HTTPS domain and prevents SSRF to internal/private networks
    */
   public async sendTeams(webhookUrl: string, payload: {
     title: string;
@@ -176,8 +268,41 @@ export class AlertDispatcher {
     timestamp: number;
     source: string;
   }): Promise<void> {
-    if (!webhookUrl || !webhookUrl.startsWith('http')) {
+    if (!webhookUrl || typeof webhookUrl !== 'string') {
+      throw new Error('Microsoft Teams Webhook URL is required');
+    }
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(webhookUrl.trim());
+    } catch {
       throw new Error('Invalid Microsoft Teams Webhook URL');
+    }
+
+    if (parsedUrl.protocol !== 'https:') {
+      throw new Error('Microsoft Teams Webhook URL must use HTTPS');
+    }
+
+    const host = parsedUrl.hostname.toLowerCase();
+
+    // Verify webhook destination is on authentic Microsoft Teams / Office 365 domains
+    const isAllowedHost =
+      host.endsWith('.webhook.office.com') ||
+      host.endsWith('.office.com') ||
+      host.endsWith('.office365.com') ||
+      host.endsWith('.microsoft.com') ||
+      host.endsWith('.logic.azure.com') ||
+      host === 'webhook.office.com' ||
+      host === 'outlook.office.com' ||
+      host === 'outlook.office365.com';
+
+    if (!isAllowedHost) {
+      throw new Error(`Invalid Microsoft Teams Webhook domain '${host}'. Only verified Microsoft/Office webhook domains are permitted.`);
+    }
+
+    // SSRF Guard: Disallow private IP addresses and loopback addresses
+    if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|169\.254\.|::1|0\.0\.0\.0)/.test(host)) {
+      throw new Error('Private or loopback IP addresses are strictly prohibited for webhooks');
     }
 
     const themeColor = payload.level === 'error' ? 'ef4444' : 'f59e0b';
@@ -195,8 +320,7 @@ export class AlertDispatcher {
           activitySubtitle: `Reported at ${isoTime}`,
           facts: [
             { name: 'Severity Level', value: payload.level.toUpperCase() },
-            { name: 'Stream Source', value: payload.source },
-            { name: 'Environment Host', value: process.env.HOSTNAME || 'localhost' }
+            { name: 'Stream Source', value: payload.source || 'TracerNest' }
           ],
           text: `\`\`\`\n${payload.message.slice(0, 1500)}\n\`\`\``
         }

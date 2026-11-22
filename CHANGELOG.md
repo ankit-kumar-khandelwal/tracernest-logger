@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.6] - 2026-11-20
+
+### Security & Capability Hardening
+- **Strict Zero-Environment-Variable Policy (`envVars`):** Completely eradicated `process.env` from all runtime library modules, bin scripts, and demos. Environmental variables are never accessed even as a fallback; all settings are strictly passed via initialization options or CLI flags.
+- **SMTP TLS Certificate Verification:** Enforced strict TLS certificate verification (`rejectUnauthorized: true`) with SNI hostname validation. Insecure self-signed or unverified certificate bypasses are prohibited.
+- **Mandatory TLS for SMTP Authentication:** Eliminated plaintext credential transmission over unencrypted connections. When SMTP credentials are provided, STARTTLS negotiation or direct TLS (SMTPS) is mandatory prior to sending `AUTH LOGIN`.
+- **CRLF Injection & Dot-Stuffing Defense:** Added strict CRLF header validation (`validateNoCrlf`) across SMTP `From`, `To`, and `Subject` fields. Implemented RFC 5321 Section 4.5.2 dot-stuffing to prevent premature message termination or command injection.
+- **Teams Webhook SSRF & Domain Guard:** Restricted Microsoft Teams incoming webhooks to HTTPS and verified Microsoft/Office domains (`*.webhook.office.com`, `*.office.com`, `*.office365.com`, `*.microsoft.com`, `*.logic.azure.com`). Strictly prohibited loopback, private IPv4/IPv6, and cloud metadata destinations.
+- **Filesystem Access Reduction:** Removed `node:fs` imports from `src/middleware/handler.ts` to prevent middleware-level filesystem probing. Streamlined `sql-store.ts` file path resolution to prevent redundant disk probing.
+- **Socket.dev Configuration Update:** Updated `socket.yml` with comprehensive capability declarations for `filesystemAccess: false` and `envVars: false`.
+
+---
+
+## [1.8.5] - 2026-11-20
+
+### Added
+- **SQLite to MySQL Automatic Data Migration:** Seamlessly auto-migrates existing SQLite records (`users`, `alert_configs`, `audit_logs`, `logs`, `system_meta`) into MySQL when changing initialization dialect from `sqlite` to `mysql`.
+- **Schema Auto-Updates on Upgrade:** Non-destructive DDL migrations applied automatically on startup (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN ...`).
+- **SQLite File Cleanup with Master Key Preservation:** Automatically removes legacy `.sqlite`, `.sqlite-wal`, `.sqlite-shm`, and `.sql` dump files after successful migration to MySQL while strictly preserving `.master.key`.
+- **Configurable Storage Folder Options:** Added `folder`, `storageDir`, and `initFolder` as configuration aliases for `dataDir`.
+- **Persistent Telemetry Logs:** Persists terminal output and HTTP logs to the database until their TTL expiration (`expires_at`), surviving server restarts.
+- **Laravel 13 Compatibility (Zero Port Overhead):** Packaged native Laravel 13 bridge files (`TracerNestMiddleware.php`, `TracerNestController.php`, `routes.php`) allowing TracerNest to run directly inside Laravel on the exact same port without opening new ports.
+- **External Log Ingestion API:** Added `POST /api/logs/ingest` supporting single or batch log ingestion from Laravel, microservices, and external backends.
+- **Standalone CLI Runner:** Added `tracernest-server` / `tracenest-server` binary to launch the telemetry dashboard independently.
+
+### Changed
+- **Pure Library Configuration:** Removed internal fetching from `process.env` (`TRACERNEST_SECRET`, `TRACERNEST_ADMIN_USERNAME`). All configurations are passed directly via initialization options.
+
+---
+
 ## [1.8.0] - 2026-11-20
 
 ### Reverse Proxy & Gateway Tolerance

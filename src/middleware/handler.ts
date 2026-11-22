@@ -1,6 +1,5 @@
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { URL } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { LogVaultConfig, Permission, UserProfile, ServerHealthInfo, ExcludedRouteRule, LogEntry, LogLevel } from '../types';
 import { CryptoSecurity } from '../security/crypto';
@@ -1479,14 +1478,6 @@ export class HttpHandler {
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:') || trimmed.startsWith('/')) {
       return trimmed;
     }
-    try {
-      if (existsSync(trimmed)) {
-        const ext = trimmed.split('.').pop()?.toLowerCase();
-        const mimeType = ext === 'svg' ? 'image/svg+xml' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
-        const fileContent = readFileSync(trimmed);
-        return `data:${mimeType};base64,${fileContent.toString('base64')}`;
-      }
-    } catch {}
     return trimmed;
   }
 }

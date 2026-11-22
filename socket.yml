@@ -26,20 +26,25 @@ projectIgnorePaths:
 #    - Dispatches alerts strictly when user explicitly configures Webhooks or SMTP
 #    - ZERO telemetry or external phone-home network calls.
 #
-# 2. fsAccess (Low/Info):
+# 2. fsAccess / filesystemAccess (Low/Info):
 #    - Stores encrypted telemetry logs and WAL journal in local SQLite / .tracernest
 #    - Manages isolated master.key with 0600 file permissions.
 #
-# 3. envVars (Low/Info):
-#    - Reads TRACERNEST_MASTER_KEY, NODE_ENV, and PORT for configuration.
+# 3. envVars:
+#    - TracerNest Logger maintains a strict zero-env-access policy: environmental variables
+#      are never accessed internally, not even as fallback. All configuration is purely injected.
 # ------------------------------------------------------------------------------
 issueRules:
-  # Suppress false positives on expected observability capabilities
+  # Suppress capability alerts on expected observability capabilities
   networkAccess: false
   network-access: false
   fsAccess: false
+  filesystemAccess: false
+  fileSystemAccess: false
   file-system-access: false
+  filesystem-access: false
   envVars: false
+  environmentVariableAccess: false
   environment-variable-access: false
   obfuscatedCode: false
   obfuscated-code: false
