@@ -157,7 +157,7 @@ export class SqlStore {
         PRAGMA busy_timeout = 5000;
         PRAGMA synchronous = NORMAL;
       `);
-    } catch {}
+    } catch { }
 
     // 1. Initialize tables with configured tablePrefix (default: logg_vault_)
     this.db.exec(`
@@ -222,22 +222,22 @@ export class SqlStore {
     // Ensure must_change_password and token_version columns exist if upgrading existing database
     try {
       this.db.exec(`ALTER TABLE ${this.tableUsers} ADD COLUMN must_change_password INTEGER DEFAULT 0`);
-    } catch {}
+    } catch { }
     try {
       this.db.exec(`ALTER TABLE ${this.tableUsers} ADD COLUMN token_version INTEGER DEFAULT 1`);
-    } catch {}
+    } catch { }
     try {
       this.db.exec(`ALTER TABLE ${this.tableLogs} ADD COLUMN expires_at INTEGER`);
-    } catch {}
+    } catch { }
     try {
       this.db.exec(`ALTER TABLE ${this.tableLogs} ADD COLUMN raw TEXT`);
-    } catch {}
+    } catch { }
     try {
       this.db.exec(`ALTER TABLE ${this.tableLogs} ADD COLUMN metadata TEXT`);
-    } catch {}
+    } catch { }
     try {
       this.db.exec(`ALTER TABLE ${this.tableLogs} ADD COLUMN tags TEXT`);
-    } catch {}
+    } catch { }
 
     // 2. Seamless Migration: If legacy unprefixed tables exist in SQLite, copy records into logg_vault_ tables
     try {
@@ -298,10 +298,10 @@ export class SqlStore {
         // Ensure newly introduced columns exist if upgrading package on an existing MySQL database
         try {
           await client.query(`ALTER TABLE ${this.tableUsers} ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0`);
-        } catch {}
+        } catch { }
         try {
           await client.query(`ALTER TABLE ${this.tableUsers} ADD COLUMN token_version INT NOT NULL DEFAULT 1`);
-        } catch {}
+        } catch { }
 
         await client.query(`
           CREATE TABLE IF NOT EXISTS ${this.tableAlerts} (
@@ -349,10 +349,10 @@ export class SqlStore {
         `);
 
         // Ensure newly introduced columns exist on logs table if upgrading package
-        try { await client.query(`ALTER TABLE ${this.tableLogs} ADD COLUMN expires_at BIGINT NULL`); } catch {}
-        try { await client.query(`ALTER TABLE ${this.tableLogs} ADD COLUMN raw MEDIUMTEXT NULL`); } catch {}
-        try { await client.query(`ALTER TABLE ${this.tableLogs} ADD COLUMN metadata MEDIUMTEXT NULL`); } catch {}
-        try { await client.query(`ALTER TABLE ${this.tableLogs} ADD COLUMN tags TEXT NULL`); } catch {}
+        try { await client.query(`ALTER TABLE ${this.tableLogs} ADD COLUMN expires_at BIGINT NULL`); } catch { }
+        try { await client.query(`ALTER TABLE ${this.tableLogs} ADD COLUMN raw MEDIUMTEXT NULL`); } catch { }
+        try { await client.query(`ALTER TABLE ${this.tableLogs} ADD COLUMN metadata MEDIUMTEXT NULL`); } catch { }
+        try { await client.query(`ALTER TABLE ${this.tableLogs} ADD COLUMN tags TEXT NULL`); } catch { }
 
         // 2. Automatic SQLite -> MySQL Migration
         // If the developer changed initialization from SQLite to MySQL in app.js, auto-migrate all SQLite data to MySQL
@@ -372,7 +372,7 @@ export class SqlStore {
           // 4. Switch local fast tier to in-memory SQLite
           try {
             this.db.close();
-          } catch {}
+          } catch { }
           this.db = new NativeDatabaseSync(':memory:');
           this.stmtInsertLog = undefined;
           this.initTables();
@@ -530,7 +530,7 @@ export class SqlStore {
       // 1. Close current db so Windows releases file locks
       try {
         this.db.close();
-      } catch {}
+      } catch { }
 
       // 2. Remove primary SQLite file and its journals/dumps
       const directFiles = [
@@ -549,7 +549,7 @@ export class SqlStore {
             }
             unlinkSync(filePath);
           }
-        } catch {}
+        } catch { }
       }
 
       // 3. Scan directory of sqliteFilePath to remove any remaining sqlite/sql files (preserving key files)
@@ -577,10 +577,10 @@ export class SqlStore {
             ) {
               try {
                 unlinkSync(join(sqliteDir, file));
-              } catch {}
+              } catch { }
             }
           }
-        } catch {}
+        } catch { }
       }
 
       // 4. Verify that .master.key remains safely on disk
@@ -736,7 +736,7 @@ export class SqlStore {
           return fileKey;
         }
       }
-    } catch {}
+    } catch { }
 
     // 3. Backward-compatible migration: check if an existing installation had master_key stored in system_meta
     let existingMetaKey: string | undefined;
@@ -745,7 +745,7 @@ export class SqlStore {
       if (row && row.value && row.value.trim().length >= 16) {
         existingMetaKey = row.value.trim();
       }
-    } catch {}
+    } catch { }
 
     const resolvedKey = existingMetaKey || CryptoSecurity.generateSecret(32);
 
@@ -770,7 +770,7 @@ export class SqlStore {
     try {
       this.db.prepare(`DELETE FROM ${this.tableMeta} WHERE key = ?`).run('master_key');
       this.executeMySqlQuery(`DELETE FROM ${this.tableMeta} WHERE \`key\` = ?`, ['master_key']);
-    } catch {}
+    } catch { }
   }
 
   public getMasterKey(): string {
@@ -1157,7 +1157,7 @@ export class SqlStore {
         if (r.tags) {
           try {
             tags = JSON.parse(r.tags);
-          } catch {}
+          } catch { }
         }
         return {
           id: r.id,
@@ -1198,7 +1198,7 @@ export class SqlStore {
     try {
       this.db.exec(`DELETE FROM ${this.tableLogs}`);
       this.executeMySqlQuery(`TRUNCATE TABLE ${this.tableLogs}`);
-    } catch {}
+    } catch { }
   }
 
   public getLogsCount(): number {
@@ -1272,7 +1272,7 @@ export class SqlStore {
         }
         let tags: string[] | undefined = undefined;
         if (r.tags) {
-          try { tags = JSON.parse(r.tags); } catch {}
+          try { tags = JSON.parse(r.tags); } catch { }
         }
         return {
           id: r.id,
@@ -1363,7 +1363,7 @@ export class SqlStore {
         }
         let tags: string[] | undefined = undefined;
         if (r.tags) {
-          try { tags = JSON.parse(r.tags); } catch {}
+          try { tags = JSON.parse(r.tags); } catch { }
         }
         const entry: LogEntry = {
           id: r.id,
@@ -1427,7 +1427,7 @@ export class SqlStore {
       }
       let tags: string[] | undefined = undefined;
       if (r.tags) {
-        try { tags = JSON.parse(r.tags); } catch {}
+        try { tags = JSON.parse(r.tags); } catch { }
       }
       return {
         id: r.id,
@@ -1470,7 +1470,7 @@ export class SqlStore {
         SET expires_at = timestamp + ?
         WHERE ${conditions.join(' AND ')}
       `).run(ttlMs, ...params);
-    } catch {}
+    } catch { }
   }
 
   public getExcludedRoutes(): ExcludedRouteRule[] {
@@ -1641,7 +1641,7 @@ export class SqlStore {
   public close(): void {
     try {
       this.db.close();
-    } catch {}
+    } catch { }
   }
 
   public getSqliteFilePath(): string {

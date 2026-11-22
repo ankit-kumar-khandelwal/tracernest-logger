@@ -1748,7 +1748,7 @@ test('Integration: Security Review Remediations (SEC-09, SEC-10) - Request Body 
     const resEmitter = new EventEmitter();
     const streamingRes = Object.assign(resEmitter, {
       statusCode: 200,
-      setHeader() {},
+      setHeader() { },
       writeHead(code: number) {
         streamStatus = code;
         this.statusCode = code;
@@ -1808,7 +1808,7 @@ test('Integration: Security Review Remediations (SEC-09, SEC-10) - Request Body 
       const mockRes = createMockReqRes({ url: '/logvault/api/auth/login' }).res;
       let statusCode = 0;
       (mockRes as any).writeHead = (code: number) => { statusCode = code; };
-      (mockRes as any).end = () => {};
+      (mockRes as any).end = () => { };
 
       await app.handleRequest(spoofReq, mockRes);
       assert.strictEqual(statusCode, 401, `Attempt ${i} should return 401`);
@@ -1851,7 +1851,7 @@ test('Integration: Security Review Remediations (SEC-09, SEC-10) - Request Body 
       const mockRes = createMockReqRes({ url: '/logvault/api/auth/login' }).res;
       let distStatusCode = 0;
       (mockRes as any).writeHead = (code: number) => { distStatusCode = code; };
-      (mockRes as any).end = () => {};
+      (mockRes as any).end = () => { };
 
       await app.handleRequest(distReq, mockRes);
       assert.strictEqual(distStatusCode, 401, `Distributed attempt ${i} returns 401`);
