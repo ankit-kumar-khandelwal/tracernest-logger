@@ -1,32 +1,65 @@
 import { DEFAULT_TRACERNEST_LOGO, DEFAULT_TRACERNEST_BANNER, DEFAULT_TRACENEST_LOGO, DEFAULT_TRACENEST_BANNER } from '../constants';
 
+function escapeHtmlServer(val: string): string {
+  return String(val || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function sanitizeSvg(svg: string): string {
+  if (/<script\b/i.test(svg) ||
+      /javascript:/i.test(svg) ||
+      /on\w+\s*=/i.test(svg) ||
+      /<iframe\b/i.test(svg) ||
+      /<object\b/i.test(svg) ||
+      /<embed\b/i.test(svg)) {
+    return '';
+  }
+  return svg;
+}
+
 function normalizeLogo(logo?: string): string {
-    if (!logo)
-        return DEFAULT_TRACERNEST_LOGO;
-    const trimmed = logo.trim();
-    if (trimmed.startsWith('<svg')) {
-        return 'data:image/svg+xml;base64,' + Buffer.from(trimmed).toString('base64');
-    }
-    if (trimmed.startsWith('data:image/svg+xml;utf8,') && (trimmed.includes('"') || trimmed.includes('<'))) {
-        const raw = trimmed.slice('data:image/svg+xml;utf8,'.length);
-        return 'data:image/svg+xml;base64,' + Buffer.from(raw).toString('base64');
-    }
+  if (!logo)
+    return DEFAULT_TRACERNEST_LOGO;
+  const trimmed = logo.trim();
+  if (trimmed.startsWith('<svg')) {
+    const cleanSvg = sanitizeSvg(trimmed);
+    if (!cleanSvg) return DEFAULT_TRACERNEST_LOGO;
+    return 'data:image/svg+xml;base64,' + Buffer.from(cleanSvg).toString('base64');
+  }
+  if (trimmed.startsWith('data:image/svg+xml;utf8,') && (trimmed.includes('"') || trimmed.includes('<'))) {
+    const raw = trimmed.slice('data:image/svg+xml;utf8,'.length);
+    const cleanSvg = sanitizeSvg(raw);
+    if (!cleanSvg) return DEFAULT_TRACERNEST_LOGO;
+    return 'data:image/svg+xml;base64,' + Buffer.from(cleanSvg).toString('base64');
+  }
+  if (/^data:image\/(?:svg\+xml|png|jpeg|jpg|gif|webp|x-icon);base64,[A-Za-z0-9+/=]+$/i.test(trimmed)) {
     return trimmed;
+  }
+  if (/^(?:\/|\.\/|https?:\/\/)[^"'\s<>]+$/i.test(trimmed) && !/javascript:/i.test(trimmed)) {
+    return trimmed;
+  }
+  return DEFAULT_TRACERNEST_LOGO;
 }
 export function getDashboardHtml(basePath: string, appTitle = 'TracerNest-Logger Console', customLogo?: string): string {
-    const effectiveLogo = normalizeLogo(customLogo);
-    const isDefaultOrTracerNest = !appTitle || appTitle.toLowerCase().includes('tracernest');
-    const brandTitleHtml = isDefaultOrTracerNest ? `
+  const safeTitle = escapeHtmlServer(appTitle);
+  const effectiveLogo = normalizeLogo(customLogo);
+  const safeLogo = escapeHtmlServer(effectiveLogo);
+  const isDefaultOrTracerNest = !appTitle || appTitle.toLowerCase().includes('tracernest');
+  const brandTitleHtml = isDefaultOrTracerNest ? `
           <span class="brand-title">TracerNest</span>
           <span class="brand-pill">LOGGER</span>` : `
-          <span class="brand-title" title="${appTitle}">${appTitle}</span>`;
-    return `<!DOCTYPE html>
+          <span class="brand-title" title="${safeTitle}">${safeTitle}</span>`;
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${appTitle}</title>
-  <link rel="icon" type="image/svg+xml" href="${effectiveLogo}">
+  <title>${safeTitle}</title>
+  <link rel="icon" type="image/svg+xml" href="${safeLogo}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -1754,7 +1787,7 @@ export function getDashboardHtml(basePath: string, appTitle = 'TracerNest-Logger
   <aside>
     <div class="sidebar-brand">
       <div class="brand-mark brand-mark-custom" style="padding:2px; display:flex; align-items:center; justify-content:center; overflow:hidden; border-radius:7px;">
-        <img src="${effectiveLogo}" alt="TracerNest Logo" style="width:100%; height:100%; object-fit:contain; border-radius:5px; display:block;" />
+        <img src="${safeLogo}" alt="TracerNest Logo" style="width:100%; height:100%; object-fit:contain; border-radius:5px; display:block;" />
       </div>
       <div class="brand-text">
         <div class="brand-title-row">
@@ -2533,7 +2566,7 @@ ${brandTitleHtml}
     <div id="setupModal" class="onboard-card" style="display:none;">
       <div style="padding:1.75rem 1.75rem 0.6rem 1.75rem; text-align:center;">
         <div style="width:52px; height:52px; margin:0 auto 0.85rem auto; border-radius:10px; overflow:hidden; border:1px solid var(--border); background:#030712; padding:3px; box-shadow:0 4px 16px rgba(2, 132, 199, 0.35);">
-          <img src="${effectiveLogo}" alt="TracerNest-Logger Logo" style="width:100%; height:100%; object-fit:contain;" />
+          <img src="${safeLogo}" alt="TracerNest-Logger Logo" style="width:100%; height:100%; object-fit:contain;" />
         </div>
         <h3 style="font-size:1.22rem; font-weight:700; color:#fff; letter-spacing:-0.02em; display:flex; align-items:center; justify-content:center; gap:6px;"><span>Welcome to TracerNest</span><span class="brand-pill" style="font-size:0.62rem;">LOGGER</span></h3>
         <p style="font-size:0.8rem; color:var(--text-secondary); margin-top:0.4rem; line-height:1.5;">
@@ -2564,7 +2597,7 @@ ${brandTitleHtml}
     <div id="loginModal" class="onboard-card" style="display:none; max-width:400px;">
       <div style="padding:1.75rem 1.75rem 0.6rem 1.75rem; text-align:center;">
         <div style="width:52px; height:52px; margin:0 auto 0.85rem auto; border-radius:10px; overflow:hidden; border:1px solid var(--border); background:#030712; padding:3px; box-shadow:0 4px 16px rgba(2, 132, 199, 0.35);">
-          <img src="${effectiveLogo}" alt="TracerNest-Logger Logo" style="width:100%; height:100%; object-fit:contain;" />
+          <img src="${safeLogo}" alt="TracerNest-Logger Logo" style="width:100%; height:100%; object-fit:contain;" />
         </div>
         <h3 style="font-size:1.22rem; font-weight:700; color:#fff; letter-spacing:-0.02em; display:flex; align-items:center; justify-content:center; gap:6px;"><span>Sign in to TracerNest</span><span class="brand-pill" style="font-size:0.62rem;">LOGGER</span></h3>
         <p style="font-size:0.8rem; color:var(--text-secondary); margin-top:0.35rem;">Enter your credentials to access the console</p>
@@ -3106,7 +3139,7 @@ ${brandTitleHtml}
         }
         if (p) return p;
       } catch (e) {}
-      return "${basePath}";
+      return ${JSON.stringify(basePath).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')};
     })();
     let token = sessionStorage.getItem('logvault_token') || '';
     let currentUser = null;
@@ -3340,7 +3373,9 @@ ${brandTitleHtml}
       try {
         const pattern = isRegex ? q : escapeRegex(q);
         const regex = new RegExp('(' + pattern + ')', 'gi');
-        return escapedText.replace(regex, '<mark class="search-match">$1</mark>');
+        return escapedText.replace(regex, function(match) {
+          return '<mark class="search-match">' + match + '</mark>';
+        });
       } catch {
         return escapedText;
       }
@@ -3656,12 +3691,17 @@ ${brandTitleHtml}
         const displayUrl = urlStr.length > 75 ? urlStr.slice(0, 75) + '...' : urlStr;
         const durationStr = http?.durationMs !== undefined ? http.durationMs + 'ms' : '';
 
+        const safeMethod = escapeHtml(method);
+        const safeStatusCode = escapeHtml(String(statusCode));
+        const safeStatusClass = escapeHtml(statusClass);
+        const safeDuration = escapeHtml(durationStr);
+
         let httpHtml = '<div style="display:flex; align-items:center; gap:0.55rem; min-width:0; overflow:hidden; flex:1;">' +
-          '<span class="method-badge method-' + method + '">' + method + '</span>' +
-          '<span class="status-badge ' + statusClass + '">' + statusCode + '</span>' +
+          '<span class="method-badge method-' + safeMethod + '">' + safeMethod + '</span>' +
+          '<span class="status-badge ' + safeStatusClass + '">' + safeStatusCode + '</span>' +
           '<span class="log-content-text" style="font-family:var(--font-mono); color:#fff; font-weight:600;" title="' + escapeHtml(urlStr) + '">' + highlightSearch(displayUrl) + '</span>';
-        if (durationStr) {
-          httpHtml += '<span style="color:#94a3b8; font-size:0.75rem; white-space:nowrap;">' + durationStr + '</span>';
+        if (safeDuration) {
+          httpHtml += '<span style="color:#94a3b8; font-size:0.75rem; white-space:nowrap;">' + safeDuration + '</span>';
         }
         httpHtml += '</div>';
         msg.innerHTML = httpHtml;
@@ -4383,8 +4423,14 @@ ${brandTitleHtml}
 
       if (http) {
         // HTTP Request & Response Inspector
-        const statusClass = http.statusCode >= 500 ? 'status-5xx' : http.statusCode >= 400 ? 'status-4xx' : 'status-2xx';
-        const methodClass = 'method-' + http.method;
+        const statusClass = escapeHtml(http.statusCode >= 500 ? 'status-5xx' : http.statusCode >= 400 ? 'status-4xx' : 'status-2xx');
+        const methodClass = escapeHtml('method-' + (http.method || 'GET'));
+        const safeMethod = escapeHtml(http.method || 'GET');
+        const safeStatusCode = escapeHtml(String(http.statusCode || 200));
+        const safeUrl = escapeHtml(http.url || '');
+        const safeDuration = escapeHtml(String(http.durationMs || 0));
+        const safeClientIp = escapeHtml(http.clientIp || '');
+        const safeId = escapeHtml(entry.id);
 
         const hasReq = http.requestBody !== undefined && http.requestBody !== null;
         const isReqEnc = isPayloadEncrypted(http.requestBody);
@@ -4397,56 +4443,59 @@ ${brandTitleHtml}
         drawer.innerHTML = 
           '<div class="http-inspector">' +
             '<div class="http-inspector-header">' +
-              '<span class="method-badge ' + methodClass + '">' + http.method + '</span>' +
-              '<span class="status-badge ' + statusClass + '">' + http.statusCode + '</span>' +
-              '<span style="font-weight:600; color:#fff; font-family:var(--font-mono); font-size:0.8rem;">' + escapeHtml(http.url) + '</span>' +
-              '<span style="margin-left:auto; color:#94a3b8; font-size:0.75rem;">' + (http.durationMs || 0) + 'ms</span>' +
-              '<span style="color:#64748b; font-size:0.72rem;">' + (http.clientIp || '') + '</span>' +
+              '<span class="method-badge ' + methodClass + '">' + safeMethod + '</span>' +
+              '<span class="status-badge ' + statusClass + '">' + safeStatusCode + '</span>' +
+              '<span style="font-weight:600; color:#fff; font-family:var(--font-mono); font-size:0.8rem;">' + safeUrl + '</span>' +
+              '<span style="margin-left:auto; color:#94a3b8; font-size:0.75rem;">' + safeDuration + 'ms</span>' +
+              '<span style="color:#64748b; font-size:0.72rem;">' + safeClientIp + '</span>' +
             '</div>' +
             '<div class="http-inspector-grid">' +
               '<div class="payload-card">' +
                 '<div class="payload-title-bar">' +
                   '<span style="color:#38bdf8; display:flex; align-items:center; gap:0.35rem;">' +
                     '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="M6 11l6 6 6-6"/><path d="M19 21H5"/></svg>' +
-                    '<span>Request Payload (' + escapeHtml(http.clientIp || 'client') + ')</span>' +
-                    (isReqEnc ? ' <span data-enc-badge="' + entry.id + '_req" class="badge badge-encrypted">🔒 Encrypted</span>' : '') +
+                    '<span>Request Payload (' + (safeClientIp || 'client') + ')</span>' +
+                    (isReqEnc ? ' <span data-enc-badge="' + safeId + '_req" class="badge badge-encrypted">🔒 Encrypted</span>' : '') +
                   '</span>' +
                   '<div style="display:flex; gap:4px;">' +
-                    (isReqEnc ? '<button class="btn btn-decrypt" style="padding:1px 6px; font-size:0.65rem;" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + entry.id + '" data-type="req">🔓 Decrypt</button>' : '') +
-                    (hasReq ? '<button class="btn" style="padding:1px 5px; font-size:0.68rem;" onclick="copyPayload(this.dataset.target)" data-target="' + entry.id + '_req">Copy</button>' : '') +
+                    (isReqEnc ? '<button class="btn btn-decrypt" style="padding:1px 6px; font-size:0.65rem;" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + safeId + '" data-type="req">🔓 Decrypt</button>' : '') +
+                    (hasReq ? '<button class="btn" style="padding:1px 5px; font-size:0.68rem;" onclick="copyPayload(this.dataset.target)" data-target="' + safeId + '_req">Copy</button>' : '') +
                   '</div>' +
                 '</div>' +
-                '<pre id="' + entry.id + '_req" class="json-code">' + reqBodyStr + '</pre>' +
+                '<pre id="' + safeId + '_req" class="json-code">' + reqBodyStr + '</pre>' +
               '</div>' +
               '<div class="payload-card">' +
                 '<div class="payload-title-bar">' +
                   '<span style="color:#10b981; display:flex; align-items:center; gap:0.35rem;">' +
                     '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 3v14"/><path d="M18 9l-6-6-6 6"/><path d="M5 21h14"/></svg>' +
-                    '<span>Response Payload (' + http.statusCode + ')</span>' +
-                    (isResEnc ? ' <span data-enc-badge="' + entry.id + '_res" class="badge badge-encrypted">🔒 Encrypted</span>' : '') +
+                    '<span>Response Payload (' + safeStatusCode + ')</span>' +
+                    (isResEnc ? ' <span data-enc-badge="' + safeId + '_res" class="badge badge-encrypted">🔒 Encrypted</span>' : '') +
                   '</span>' +
                   '<div style="display:flex; gap:4px;">' +
-                    (isResEnc ? '<button class="btn btn-decrypt" style="padding:1px 6px; font-size:0.65rem;" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + entry.id + '" data-type="res">🔓 Decrypt</button>' : '') +
-                    (hasRes ? '<button class="btn" style="padding:1px 5px; font-size:0.68rem;" onclick="copyPayload(this.dataset.target)" data-target="' + entry.id + '_res">Copy</button>' : '') +
+                    (isResEnc ? '<button class="btn btn-decrypt" style="padding:1px 6px; font-size:0.65rem;" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + safeId + '" data-type="res">🔓 Decrypt</button>' : '') +
+                    (hasRes ? '<button class="btn" style="padding:1px 5px; font-size:0.68rem;" onclick="copyPayload(this.dataset.target)" data-target="' + safeId + '_res">Copy</button>' : '') +
                   '</div>' +
                 '</div>' +
-                '<pre id="' + entry.id + '_res" class="json-code">' + resBodyStr + '</pre>' +
+                '<pre id="' + safeId + '_res" class="json-code">' + resBodyStr + '</pre>' +
               '</div>' +
             '</div>' +
             '<div style="display:flex; justify-content:flex-end; gap:0.5rem; padding:0.45rem 0.85rem; background:#050914; border-top:1px solid var(--border-subtle);">' +
-              '<button class="btn btn-sm" style="color:#f87171; border-color:rgba(239,68,68,0.3);" onclick="promptQuickExcludeRoute(this.dataset.url, this.dataset.method)" data-url="' + escapeHtml(http.url || '') + '" data-method="' + (http.method || 'ALL') + '"><svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg><span>Skip Route</span></button>' +
-              '<button class="btn btn-sm" onclick="copyApiCurl(this.dataset.id)" data-id="' + entry.id + '"><svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy cURL</span></button>' +
-              '<button class="btn btn-sm" onclick="openLogModal(this.dataset.id)" data-id="' + entry.id + '"><svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/></svg><span>Open in Full Inspector</span></button>' +
+              '<button class="btn btn-sm" style="color:#f87171; border-color:rgba(239,68,68,0.3);" onclick="promptQuickExcludeRoute(this.dataset.url, this.dataset.method)" data-url="' + safeUrl + '" data-method="' + safeMethod + '"><svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg><span>Skip Route</span></button>' +
+              '<button class="btn btn-sm" onclick="copyApiCurl(this.dataset.id)" data-id="' + safeId + '"><svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy cURL</span></button>' +
+              '<button class="btn btn-sm" onclick="openLogModal(this.dataset.id)" data-id="' + safeId + '"><svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/></svg><span>Open in Full Inspector</span></button>' +
             '</div>' +
           '</div>';
       } else {
         // Standard Log Metadata View
+        const safeId = escapeHtml(entry.id);
+        const safeIso = escapeHtml(new Date(entry.timestamp).toISOString());
+        const safeSource = escapeHtml(entry.source || '');
         let drawerContent = '<div style="display:flex; gap:1.5rem; margin-bottom:0.4rem; color:#94a3b8; font-size:0.72rem;">' +
-          '<span>ID: ' + entry.id + '</span>' +
-          '<span>ISO: ' + new Date(entry.timestamp).toISOString() + '</span>' +
-          '<span>SOURCE: ' + entry.source + '</span>';
+          '<span>ID: ' + safeId + '</span>' +
+          '<span>ISO: ' + safeIso + '</span>' +
+          '<span>SOURCE: ' + safeSource + '</span>';
         if (entry.expiresAt) {
-          drawerContent += '<span style="color:#a855f7;">EXPIRES: ' + new Date(entry.expiresAt).toLocaleTimeString() + '</span>';
+          drawerContent += '<span style="color:#a855f7;">EXPIRES: ' + escapeHtml(new Date(entry.expiresAt).toLocaleTimeString()) + '</span>';
         }
         drawerContent += '</div>';
         if (entry.metadata) {
@@ -4617,10 +4666,16 @@ ${brandTitleHtml}
         const h = e.metadata?.http || {};
         const method = h.method || 'POST';
         const statusCode = h.statusCode || 200;
-        const statusClass = statusCode >= 500 ? 'status-5xx' : (statusCode >= 400 ? 'status-4xx' : 'status-2xx');
-        const methodClass = 'method-' + method;
-        const timeStr = new Date(e.timestamp).toLocaleTimeString();
-        const clientIp = h.clientIp || '127.0.0.1';
+        const safeMethod = escapeHtml(method);
+        const safeStatusCode = escapeHtml(String(statusCode));
+        const safeMethodClass = escapeHtml('method-' + method);
+        const safeStatusClass = escapeHtml(statusCode >= 500 ? 'status-5xx' : (statusCode >= 400 ? 'status-4xx' : 'status-2xx'));
+        const safeTimeStr = escapeHtml(new Date(e.timestamp).toLocaleTimeString());
+        const safeClientIp = escapeHtml(h.clientIp || '127.0.0.1');
+        const safeDuration = escapeHtml(String(h.durationMs || 0));
+        const safeId = escapeHtml(e.id);
+        const rawUrl = h.url || e.message || '';
+        const safeUrl = escapeHtml(rawUrl);
 
         const row = document.createElement('div');
         row.className = 'api-row-item';
@@ -4630,56 +4685,56 @@ ${brandTitleHtml}
         const hasRes = h.responseBody !== undefined && h.responseBody !== null;
         const isResEnc = isPayloadEncrypted(h.responseBody);
 
-        const highlightedUrl = highlightSearch(h.url || e.message, s);
-        const highlightedIp = highlightSearch(clientIp, s);
+        const highlightedUrl = highlightSearch(rawUrl, s);
+        const highlightedIp = highlightSearch(h.clientIp || '127.0.0.1', s);
 
         let rowInner = 
-          '<div class="api-row-header" onclick="toggleApiRow(this.dataset.id)" data-id="' + e.id + '">' +
-            '<span class="method-badge ' + methodClass + '">' + method + '</span>' +
-            '<span class="status-badge ' + statusClass + '">' + statusCode + '</span>' +
-            '<span class="api-row-url" title="' + escapeHtml(h.url || e.message) + '">' + highlightedUrl + '</span>' +
-            '<span class="api-pill" title="Execution Latency">⏱️ ' + (h.durationMs || 0) + 'ms</span>' +
+          '<div class="api-row-header" onclick="toggleApiRow(this.dataset.id)" data-id="' + safeId + '">' +
+            '<span class="method-badge ' + safeMethodClass + '">' + safeMethod + '</span>' +
+            '<span class="status-badge ' + safeStatusClass + '">' + safeStatusCode + '</span>' +
+            '<span class="api-row-url" title="' + safeUrl + '">' + highlightedUrl + '</span>' +
+            '<span class="api-pill" title="Execution Latency">⏱️ ' + safeDuration + 'ms</span>' +
             '<span class="api-pill api-pill-ip" title="Client IP Address" style="display:inline-flex; align-items:center; gap:4px;"><svg class="icon icon-sm" style="width:10px; height:10px;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg>' + highlightedIp + '</span>' +
-            '<span style="color:#64748b; font-size:0.72rem; font-family:var(--font-mono);">' + timeStr + '</span>' +
-            '<span class="btn" style="padding:2px 8px; font-size:0.68rem; margin-left:auto;" onclick="event.stopPropagation(); toggleApiRow(this.dataset.id)" data-id="' + e.id + '">' +
-              '<span id="apiArrow_' + e.id + '">Inspect ▾</span>' +
+            '<span style="color:#64748b; font-size:0.72rem; font-family:var(--font-mono);">' + safeTimeStr + '</span>' +
+            '<span class="btn" style="padding:2px 8px; font-size:0.68rem; margin-left:auto;" onclick="event.stopPropagation(); toggleApiRow(this.dataset.id)" data-id="' + safeId + '">' +
+              '<span id="apiArrow_' + safeId + '">Inspect ▾</span>' +
             '</span>' +
           '</div>' +
-          '<div id="apiDrawer_' + e.id + '" class="api-row-drawer">' +
+          '<div id="apiDrawer_' + safeId + '" class="api-row-drawer">' +
             '<div class="api-drawer-grid">' +
               '<div class="payload-card">' +
                 '<div class="payload-title-bar">' +
                   '<span style="color:#38bdf8; display:flex; align-items:center; gap:0.35rem;">' +
-                    '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="M6 11l6 6 6-6"/><path d="M19 21H5"/></svg> Request Payload (' + escapeHtml(clientIp) + ')' +
-                    (isReqEnc ? ' <span data-enc-badge="' + e.id + '_req" class="badge badge-encrypted">🔒 Encrypted</span>' : '') +
+                    '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="M6 11l6 6 6-6"/><path d="M19 21H5"/></svg> Request Payload (' + safeClientIp + ')' +
+                    (isReqEnc ? ' <span data-enc-badge="' + safeId + '_req" class="badge badge-encrypted">🔒 Encrypted</span>' : '') +
                   '</span>' +
                   '<div style="display:flex; gap:4px;">' +
-                    (isReqEnc ? '<button class="btn btn-decrypt" style="padding:1px 6px; font-size:0.65rem;" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + e.id + '" data-type="req">🔓 Decrypt</button>' : '');
+                    (isReqEnc ? '<button class="btn btn-decrypt" style="padding:1px 6px; font-size:0.65rem;" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + safeId + '" data-type="req">🔓 Decrypt</button>' : '');
         if (hasReq) {
-          rowInner += '<button class="btn" style="padding:1px 6px; font-size:0.65rem;" onclick="copyPayload(this.dataset.target)" data-target="' + e.id + '_card_req">Copy JSON</button>';
+          rowInner += '<button class="btn" style="padding:1px 6px; font-size:0.65rem;" onclick="copyPayload(this.dataset.target)" data-target="' + safeId + '_card_req">Copy JSON</button>';
         }
         rowInner += '</div></div>' +
-          '<pre id="' + e.id + '_card_req" class="json-code">' + (hasReq ? highlightSearch(typeof h.requestBody === 'string' ? h.requestBody : JSON.stringify(h.requestBody, null, 2), s) : '<span style="color:#64748b; font-style:italic;">(No Request Body)</span>') + '</pre>' +
+          '<pre id="' + safeId + '_card_req" class="json-code">' + (hasReq ? highlightSearch(typeof h.requestBody === 'string' ? h.requestBody : JSON.stringify(h.requestBody, null, 2), s) : '<span style="color:#64748b; font-style:italic;">(No Request Body)</span>') + '</pre>' +
         '</div>' +
         '<div class="payload-card">' +
           '<div class="payload-title-bar">' +
             '<span style="color:#10b981; display:flex; align-items:center; gap:0.35rem;">' +
-              '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 3v14"/><path d="M18 9l-6-6-6 6"/><path d="M5 21h14"/></svg> Response Payload (' + statusCode + ')' +
-              (isResEnc ? ' <span data-enc-badge="' + e.id + '_res" class="badge badge-encrypted">🔒 Encrypted</span>' : '') +
+              '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 3v14"/><path d="M18 9l-6-6-6 6"/><path d="M5 21h14"/></svg> Response Payload (' + safeStatusCode + ')' +
+              (isResEnc ? ' <span data-enc-badge="' + safeId + '_res" class="badge badge-encrypted">🔒 Encrypted</span>' : '') +
             '</span>' +
             '<div style="display:flex; gap:4px;">' +
-              (isResEnc ? '<button class="btn btn-decrypt" style="padding:1px 6px; font-size:0.65rem;" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + e.id + '" data-type="res">🔓 Decrypt</button>' : '');
+              (isResEnc ? '<button class="btn btn-decrypt" style="padding:1px 6px; font-size:0.65rem;" onclick="decryptPayloadInCard(this.dataset.id, this.dataset.type, this)" data-id="' + safeId + '" data-type="res">🔓 Decrypt</button>' : '');
         if (hasRes) {
-          rowInner += '<button class="btn" style="padding:1px 6px; font-size:0.65rem;" onclick="copyPayload(this.dataset.target)" data-target="' + e.id + '_card_res">Copy JSON</button>';
+          rowInner += '<button class="btn" style="padding:1px 6px; font-size:0.65rem;" onclick="copyPayload(this.dataset.target)" data-target="' + safeId + '_card_res">Copy JSON</button>';
         }
         rowInner += '</div></div>' +
-          '<pre id="' + e.id + '_card_res" class="json-code">' + (hasRes ? highlightSearch(typeof h.responseBody === 'string' ? h.responseBody : JSON.stringify(h.responseBody, null, 2), s) : '<span style="color:#64748b; font-style:italic;">(No Response Body)</span>') + '</pre>' +
+          '<pre id="' + safeId + '_card_res" class="json-code">' + (hasRes ? highlightSearch(typeof h.responseBody === 'string' ? h.responseBody : JSON.stringify(h.responseBody, null, 2), s) : '<span style="color:#64748b; font-style:italic;">(No Response Body)</span>') + '</pre>' +
         '</div>' +
         '</div>' +
         '<div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:0.6rem;">' +
-          '<button class="btn btn-sm" style="color:#f87171; border-color:rgba(239,68,68,0.3);" onclick="promptQuickExcludeRoute(this.dataset.url, this.dataset.method)" data-url="' + escapeHtml(h.url || e.message || '') + '" data-method="' + method + '"><svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg><span>Skip Route</span></button>' +
-          '<button class="btn btn-sm" onclick="copyApiCurl(this.dataset.id)" data-id="' + e.id + '"><svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy as cURL</span></button>' +
-          '<button class="btn btn-sm" onclick="openLogModal(this.dataset.id)" data-id="' + e.id + '"><svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/></svg><span>Open in Full Inspector</span></button>' +
+          '<button class="btn btn-sm" style="color:#f87171; border-color:rgba(239,68,68,0.3);" onclick="promptQuickExcludeRoute(this.dataset.url, this.dataset.method)" data-url="' + safeUrl + '" data-method="' + safeMethod + '"><svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg><span>Skip Route</span></button>' +
+          '<button class="btn btn-sm" onclick="copyApiCurl(this.dataset.id)" data-id="' + safeId + '"><svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy as cURL</span></button>' +
+          '<button class="btn btn-sm" onclick="openLogModal(this.dataset.id)" data-id="' + safeId + '"><svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/></svg><span>Open in Full Inspector</span></button>' +
         '</div>' +
         '</div>';
 
@@ -5085,15 +5140,21 @@ ${brandTitleHtml}
       tbody.innerHTML = '';
       for (const r of rules) {
         const tr = document.createElement('tr');
-        const durStr = formatSeconds(r.ttlSeconds);
+        const durStr = escapeHtml(formatSeconds(r.ttlSeconds));
+        const safeId = escapeHtml(r.id);
+        const safeName = escapeHtml(r.name || r.id);
+        const safeLevel = escapeHtml(r.level || 'info');
+        const safeLevelText = escapeHtml((r.level || 'all').toUpperCase());
+        const safeSource = escapeHtml(r.source || 'all');
+        const safePattern = r.pattern ? escapeHtml(r.pattern) : '<span style="color:#64748b;">(All)</span>';
         tr.innerHTML = \`
-          <td style="font-weight:600;">\${escapeHtml(r.name || r.id)}</td>
-          <td><span class="severity-pill pill-\${r.level || 'info'}">\${(r.level || 'all').toUpperCase()}</span></td>
-          <td style="text-transform:uppercase; font-size:0.75rem; color:#94a3b8;">\${r.source || 'all'}</td>
-          <td style="font-family:var(--font-mono); font-size:0.75rem;">\${r.pattern ? escapeHtml(r.pattern) : '<span style="color:#64748b;">(All)</span>'}</td>
+          <td style="font-weight:600;">\${safeName}</td>
+          <td><span class="severity-pill pill-\${safeLevel}">\${safeLevelText}</span></td>
+          <td style="text-transform:uppercase; font-size:0.75rem; color:#94a3b8;">\${safeSource}</td>
+          <td style="font-family:var(--font-mono); font-size:0.75rem;">\${safePattern}</td>
           <td style="font-weight:700; color:#38bdf8;">\${durStr}</td>
           <td>
-            <button class="btn btn-danger" style="padding:2px 7px; font-size:0.7rem;" onclick="deleteTTLRule('\${r.id}')">Delete</button>
+            <button class="btn btn-danger" style="padding:2px 7px; font-size:0.7rem;" onclick="deleteTTLRule(this.dataset.id)" data-id="\${safeId}">Delete</button>
           </td>
         \`;
         tbody.appendChild(tr);
@@ -5222,7 +5283,12 @@ ${brandTitleHtml}
         else if (method === 'DELETE') methodBadgeClass = 'method-DELETE';
         else if (method === 'PATCH') methodBadgeClass = 'method-PATCH';
 
-        const createdStr = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '-';
+        const safeMethod = escapeHtml(method);
+        const safeMethodBadge = escapeHtml(methodBadgeClass);
+        const safeId = escapeHtml(r.id);
+        const safePath = escapeHtml(r.path);
+        const safeDesc = r.description ? escapeHtml(r.description) : '<span style="color:#64748b; font-style:italic;">No description provided</span>';
+        const createdStr = escapeHtml(r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '-');
         const isEnabled = r.enabled !== false;
 
         const statusBadge = isEnabled
@@ -5230,22 +5296,22 @@ ${brandTitleHtml}
           : '<span style="display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border-radius:12px; font-size:0.72rem; font-weight:600; background:rgba(100,116,139,0.15); color:#94a3b8; border:1px solid rgba(100,116,139,0.3);"><span style="width:6px; height:6px; border-radius:50%; background:#94a3b8;"></span>Paused</span>';
 
         tr.innerHTML = \`
-          <td><span class="method-badge \${methodBadgeClass}">\${method}</span></td>
+          <td><span class="method-badge \${safeMethodBadge}">\${safeMethod}</span></td>
           <td style="font-family:var(--font-mono); font-size:0.82rem; font-weight:600; color:#e2e8f0;">
             <div style="display:flex; align-items:center; gap:0.4rem;">
               <svg class="icon icon-sm" style="width:12px; height:12px; color:#38bdf8;" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <span>\${escapeHtml(r.path)}</span>
+              <span>\${safePath}</span>
             </div>
           </td>
-          <td style="font-size:0.78rem; color:#94a3b8;">\${r.description ? escapeHtml(r.description) : '<span style="color:#64748b; font-style:italic;">No description provided</span>'}</td>
+          <td style="font-size:0.78rem; color:#94a3b8;">\${safeDesc}</td>
           <td>\${statusBadge}</td>
           <td style="font-size:0.72rem; color:#64748b; font-family:var(--font-mono);">\${createdStr}</td>
           <td style="text-align:right;">
             <div style="display:inline-flex; gap:0.4rem;">
-              <button class="btn btn-sm" style="padding:2px 7px; font-size:0.7rem;" onclick="toggleExcludedRoute('\${r.id}')" title="\${isEnabled ? 'Pause skipping (resume tracking)' : 'Enable skipping'}">
+              <button class="btn btn-sm" style="padding:2px 7px; font-size:0.7rem;" onclick="toggleExcludedRoute(this.dataset.id)" data-id="\${safeId}" title="\${isEnabled ? 'Pause skipping (resume tracking)' : 'Enable skipping'}">
                 \${isEnabled ? 'Pause' : 'Resume'}
               </button>
-              <button class="btn btn-danger btn-sm" style="padding:2px 7px; font-size:0.7rem;" onclick="deleteExcludedRoute('\${r.id}', '\${escapeHtml(r.path)}')" title="Delete exclusion rule">
+              <button class="btn btn-danger btn-sm" style="padding:2px 7px; font-size:0.7rem;" onclick="deleteExcludedRoute(this.dataset.id, this.dataset.path)" data-id="\${safeId}" data-path="\${safePath}" title="Delete exclusion rule">
                 Delete
               </button>
             </div>
@@ -5394,13 +5460,19 @@ ${brandTitleHtml}
         tbody.innerHTML = '';
         for (const u of data.users || []) {
           const tr = document.createElement('tr');
+          const safeUsername = escapeHtml(u.username);
+          const safeRole = escapeHtml(u.role);
+          const safeId = escapeHtml(u.id);
+          const safeCreated = escapeHtml(new Date(u.createdAt).toLocaleDateString());
+          const safeLogin = escapeHtml(u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleTimeString() : 'Never');
+          const isCurrentUser = currentUser && u.username === currentUser.username;
           tr.innerHTML = \`
-            <td style="font-weight:600;">\${escapeHtml(u.username)}</td>
-            <td><span class="role-tag \${u.role}">\${u.role}</span></td>
-            <td>\${new Date(u.createdAt).toLocaleDateString()}</td>
-            <td>\${u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleTimeString() : 'Never'}</td>
+            <td style="font-weight:600;">\${safeUsername}</td>
+            <td><span class="role-tag \${safeRole}">\${safeRole}</span></td>
+            <td>\${safeCreated}</td>
+            <td>\${safeLogin}</td>
             <td>
-              \${u.username !== currentUser.username ? \`<button class="btn btn-danger" style="padding:2px 7px; font-size:0.7rem;" onclick="deleteUser('\${u.id}')">Delete</button>\` : '<span style="color:#64748b; font-size:0.75rem;">(Current)</span>'}
+              \${!isCurrentUser ? \`<button class="btn btn-danger" style="padding:2px 7px; font-size:0.7rem;" onclick="deleteUser(this.dataset.id)" data-id="\${safeId}">Delete</button>\` : '<span style="color:#64748b; font-size:0.75rem;">(Current)</span>'}
             </td>
           \`;
           tbody.appendChild(tr);
