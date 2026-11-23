@@ -2748,6 +2748,65 @@ test('Security: AlertDispatcher SMTP CRLF, Dot-Stuffing & Teams Webhook SSRF Val
   }
 });
 
+test('Integration: Security Hardening - Dashboard HTML Escaping, Safe basePath, and CSP Hardening', async () => {
+  // 1. Verify appTitle context-appropriate escaping
+  const maliciousTitle = '</title><script>alert("xss-title")</script>" onfocus="alert(1)';
+  const htmlWithBadTitle = getDashboardHtml('/logvault', maliciousTitle);
+  assert.ok(!htmlWithBadTitle.includes('</title><script>alert("xss-title")</script>'), 'appTitle must not allow </title> breakout');
+  assert.ok(htmlWithBadTitle.includes('&lt;/title&gt;&lt;script&gt;alert(&quot;xss-title&quot;)&lt;/script&gt;'), 'appTitle must be HTML entity escaped in <title>');
+  assert.ok(!htmlWithBadTitle.includes('title="' + maliciousTitle + '"'), 'appTitle attribute must be escaped');
+
+  // 2. Verify customLogo validation & SVG script rejection
+  const maliciousSvg = '<svg onload="alert(1)"><script>alert("xss")</script><circle cx="10" cy="10" r="5"/></svg>';
+  const htmlWithBadSvg = getDashboardHtml('/logvault', 'Vault', maliciousSvg);
+  assert.ok(!htmlWithBadSvg.includes(Buffer.from(maliciousSvg).toString('base64')), 'Malicious SVG containing scripts/onload must be rejected');
+  assert.ok(htmlWithBadSvg.includes(DEFAULT_TRACERNEST_LOGO), 'Rejected malicious SVG must safely fallback to DEFAULT_TRACERNEST_LOGO');
+
+  const jsUrlLogo = 'javascript:alert(1)';
+  const htmlWithJsLogo = getDashboardHtml('/logvault', 'Vault', jsUrlLogo);
+  assert.ok(!htmlWithJsLogo.includes('href="javascript:alert(1)"'), 'javascript: URI in customLogo must not be rendered');
+  assert.ok(!htmlWithJsLogo.includes('src="javascript:alert(1)"'), 'javascript: URI in customLogo must not be rendered in img src');
+
+  const quoteBreakoutLogo = '" onerror="alert(1)" class="xss';
+  const htmlWithQuoteLogo = getDashboardHtml('/logvault', 'Vault', quoteBreakoutLogo);
+  assert.ok(!htmlWithQuoteLogo.includes('src="" onerror="alert(1)"'), 'Quote breakout in customLogo must be sanitized or escaped');
+
+  // 3. Verify basePath safe JSON embedding in client JavaScript
+  const scriptBreakoutBasePath = '/vault</script><script>alert("breakout")</script>';
+  const htmlWithBreakoutPath = getDashboardHtml(scriptBreakoutBasePath, 'Vault');
+  assert.ok(!htmlWithBreakoutPath.includes('return "/vault</script>'), 'basePath must not contain unescaped </script> tag inside JS string');
+  assert.ok(htmlWithBreakoutPath.includes('\\u003c/script\\u003e'), 'basePath < and > must be unicode-escaped for safe inline JS embedding');
+
+  // 4. Verify CSP header contains hardened directives
+  const testSqlite = './integ_csp_harden.sqlite';
+  const testSql = './integ_csp_harden.sql';
+  if (existsSync(testSqlite)) unlinkSync(testSqlite);
+  if (existsSync(testSql)) unlinkSync(testSql);
+
+  const app = new TracerNestLogger({
+    path: '/logvault',
+    sqliteFilePath: testSqlite,
+    sqlFilePath: testSql
+  });
+
+  try {
+    const mock = createMockReqRes({ url: '/logvault' });
+    await app.handleRequest(mock.req, mock.res);
+    const resp = mock.getResponse();
+    const csp = resp.headers['content-security-policy'];
+    assert.ok(csp, 'CSP header must be present');
+    assert.ok(csp.includes("object-src 'none'"), 'CSP must forbid plugins via object-src none');
+    assert.ok(csp.includes("base-uri 'self'"), 'CSP must restrict base-uri to self');
+    assert.ok(csp.includes("frame-ancestors 'none'"), 'CSP must prevent framing via frame-ancestors none');
+    assert.ok(csp.includes("connect-src 'self'"), 'CSP must enforce connect-src self');
+  } finally {
+    app.stop();
+    if (existsSync(testSqlite)) unlinkSync(testSqlite);
+    if (existsSync(testSql)) unlinkSync(testSql);
+  }
+});
+
+
 
 
 
