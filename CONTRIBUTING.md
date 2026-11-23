@@ -103,5 +103,5 @@ Every feature addition or bug fix **must** be accompanied by automated tests:
 
 ## Community & Questions
 
-If you have questions, encounter a bug, or want to propose a new feature, feel free to open a [GitHub Issue](https://github.com/tracernest/tracernest-logger/issues) or reach out to `contact@tracernest.dev`.
+If you have questions, encounter a bug, or want to propose a new feature, feel free to open a [GitHub Issue](https://github.com/ankit-kumar-khandelwal/tracernest-logger/issues) or reach out to `ankitkhandelwal0003@gmail.com`.
 

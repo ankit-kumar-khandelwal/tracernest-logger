@@ -28,8 +28,8 @@ If you discover a potential security vulnerability in TracerNest Logger, report 
    Navigate to the repository's [Security Advisories](https://github.com/ankit-kumar-khandelwal/tracernest-logger/security/advisories) tab and click **"Report a vulnerability"**. This creates an isolated, encrypted discussion channel with the maintainers.
 
 2. **Direct Security Email:**  
-   Send an encrypted or plain email to: **`security@tracernest.dev`**  
-   *(Backup contact: `contact@tracernest.dev`)*
+   Send an encrypted or plain email to: **`ankitkhandelwal0003@gmail.com`**  
+   *(Backup contact: `ankitkhandelwal0003@gmail.com`)*
 
 ### What to Include in Your Report
 

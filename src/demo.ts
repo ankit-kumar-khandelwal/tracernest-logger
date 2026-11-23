@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { TracerNestLogger } from './index';
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = 3000;
 
 // Initialize TracerNestLogger with TTL and automated HTTP Request/Response tracking
 const tracerNest = new TracerNestLogger({

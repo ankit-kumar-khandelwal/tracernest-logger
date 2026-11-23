@@ -67,46 +67,18 @@ Examples:
     getArg('--dir', '-d') ||
     getArg('--folder') ||
     getArg('--storage-dir') ||
-    process.env.DATA_DIR ||
-    process.env.STORAGE_DIR ||
-    (existsSync('./.tracernest') ? './.tracernest' : (existsSync('./tracernest') ? './tracernest' : undefined));
+    './.tracernest';
 
   let sqlitePath =
     getArg('--sqlite', '-s') ||
-    process.env.SQLITE_PATH ||
-    (dataDir && existsSync(`${dataDir}/tracernest-logger.sqlite`)
-      ? `${dataDir}/tracernest-logger.sqlite`
-      : existsSync('./.tracernest/tracernest-logger.sqlite')
-      ? './.tracernest/tracernest-logger.sqlite'
-      : existsSync('./tracernest/tracernest-logger.sqlite')
-      ? './tracernest/tracernest-logger.sqlite'
-      : existsSync('./tracernest-logger.sqlite')
-      ? './tracernest-logger.sqlite'
-      : existsSync('./tracenest.sqlite')
-      ? './tracenest.sqlite'
-      : existsSync('./logvault.sqlite')
-      ? './logvault.sqlite'
-      : (dataDir ? `${dataDir}/tracernest-logger.sqlite` : './.tracernest/tracernest-logger.sqlite'));
+    `${dataDir}/tracernest-logger.sqlite`;
 
   let sqlPath =
     getArg('--sql') ||
-    process.env.SQL_PATH ||
-    (dataDir && existsSync(`${dataDir}/tracernest-logger.sql`)
-      ? `${dataDir}/tracernest-logger.sql`
-      : existsSync('./.tracernest/tracernest-logger.sql')
-      ? './.tracernest/tracernest-logger.sql'
-      : existsSync('./tracernest/tracernest-logger.sql')
-      ? './tracernest/tracernest-logger.sql'
-      : existsSync('./tracernest-logger.sql')
-      ? './tracernest-logger.sql'
-      : existsSync('./tracenest.sql')
-      ? './tracenest.sql'
-      : existsSync('./logvault.sql')
-      ? './logvault.sql'
-      : (dataDir ? `${dataDir}/tracernest-logger.sql` : './.tracernest/tracernest-logger.sql'));
+    `${dataDir}/tracernest-logger.sql`;
 
-  let tablePrefix = getArg('--prefix', '-p') || process.env.TABLE_PREFIX || undefined;
-  let dialect: 'sqlite' | 'mysql' = (getArg('--dialect') as any) || (process.env.DB_DIALECT === 'mysql' ? 'mysql' : 'sqlite');
+  let tablePrefix = getArg('--prefix', '-p') || undefined;
+  let dialect: 'sqlite' | 'mysql' = (getArg('--dialect') as any) === 'mysql' ? 'mysql' : 'sqlite';
 
   const sqlStore = new SqlStore({
     dataDir,

@@ -1,6 +1,6 @@
 {
   "name": "tracernest-logger",
-  "version": "1.8.6",
+  "version": "1.8.8",
   "description": "Zero-dependency, high-security Node.js application telemetry logger, live trace monitor & ops dashboard with encrypted SQL storage, RBAC, HTTP interception, real client IP extraction, and graceful shutdown",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -33,7 +33,7 @@
     "type": "git",
     "url": "git+https://github.com/ankit-kumar-khandelwal/tracernest-logger.git"
   },
-  "homepage": "https://github.com/ankit-kumar-khandelwal/tracernest-logger#readme",
+  "homepage": "https://tracernest.info/",
   "bugs": {
     "url": "https://github.com/ankit-kumar-khandelwal/tracernest-logger/issues"
   },
@@ -71,7 +71,7 @@
     "graceful-shutdown",
     "developer-tools"
   ],
-  "author": "TracerNest-Logger Contributors <contact@tracernest.dev>",
+  "author": "TracerNest-Logger Contributors <ankitkhandelwal0003@gmail.com>",
   "license": "Apache-2.0",
   "devDependencies": {
     "@types/node": "^22.20.5",

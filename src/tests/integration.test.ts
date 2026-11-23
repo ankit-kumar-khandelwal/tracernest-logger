@@ -1748,7 +1748,7 @@ test('Integration: Security Review Remediations (SEC-09, SEC-10) - Request Body 
     const resEmitter = new EventEmitter();
     const streamingRes = Object.assign(resEmitter, {
       statusCode: 200,
-      setHeader() {},
+      setHeader() { },
       writeHead(code: number) {
         streamStatus = code;
         this.statusCode = code;
@@ -1808,7 +1808,7 @@ test('Integration: Security Review Remediations (SEC-09, SEC-10) - Request Body 
       const mockRes = createMockReqRes({ url: '/logvault/api/auth/login' }).res;
       let statusCode = 0;
       (mockRes as any).writeHead = (code: number) => { statusCode = code; };
-      (mockRes as any).end = () => {};
+      (mockRes as any).end = () => { };
 
       await app.handleRequest(spoofReq, mockRes);
       assert.strictEqual(statusCode, 401, `Attempt ${i} should return 401`);
@@ -1851,7 +1851,7 @@ test('Integration: Security Review Remediations (SEC-09, SEC-10) - Request Body 
       const mockRes = createMockReqRes({ url: '/logvault/api/auth/login' }).res;
       let distStatusCode = 0;
       (mockRes as any).writeHead = (code: number) => { distStatusCode = code; };
-      (mockRes as any).end = () => {};
+      (mockRes as any).end = () => { };
 
       await app.handleRequest(distReq, mockRes);
       assert.strictEqual(distStatusCode, 401, `Distributed attempt ${i} returns 401`);
@@ -2629,6 +2629,125 @@ test('Integration: Laravel 13 Telemetry Ingestion API (POST /api/logs/ingest)', 
     if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
   }
 });
+
+test('Security: AlertDispatcher SMTP CRLF, Dot-Stuffing & Teams Webhook SSRF Validation', async () => {
+  const testDir = `./test_security_alerts_${Date.now()}`;
+  const tracer = new TracerNestLogger({
+    dataDir: testDir,
+    masterKey: '0123456789abcdef0123456789abcdef'
+  });
+
+  try {
+    const dispatcher = (tracer as any).alertDispatcher;
+    assert.ok(dispatcher, 'AlertDispatcher must exist');
+
+    // 1. CRLF Injection Defense in SMTP
+    await assert.rejects(
+      async () => {
+        await dispatcher.sendEmail({
+          host: 'smtp.example.com',
+          port: 465,
+          secure: true,
+          from: 'admin@example.com\r\nBcc: victim@example.com',
+          to: 'alerts@example.com',
+          subject: 'Incident Alert',
+          body: 'Log message'
+        });
+      },
+      /CRLF injection attempt detected/,
+      'SMTP sendEmail must reject CRLF characters in from address'
+    );
+
+    await assert.rejects(
+      async () => {
+        await dispatcher.sendEmail({
+          host: 'smtp.example.com',
+          port: 465,
+          secure: true,
+          from: 'admin@example.com',
+          to: 'alerts@example.com\r\nSubject: Injected Subject',
+          subject: 'Incident Alert',
+          body: 'Log message'
+        });
+      },
+      /CRLF injection attempt detected/,
+      'SMTP sendEmail must reject CRLF characters in to address'
+    );
+
+    await assert.rejects(
+      async () => {
+        await dispatcher.sendEmail({
+          host: 'smtp.example.com',
+          port: 465,
+          secure: true,
+          from: 'admin@example.com',
+          to: 'alerts@example.com',
+          subject: 'Header\r\nInjected: True',
+          body: 'Log message'
+        });
+      },
+      /CRLF injection attempt detected/,
+      'SMTP sendEmail must reject CRLF characters in subject'
+    );
+
+    // 2. Microsoft Teams Webhook HTTPS & Domain Whitelist Validation
+    await assert.rejects(
+      async () => {
+        await dispatcher.sendTeams('http://office.com/webhook', {
+          title: 'Alert',
+          level: 'error',
+          message: 'Error message',
+          timestamp: Date.now(),
+          source: 'test'
+        });
+      },
+      /Microsoft Teams Webhook URL must use HTTPS/,
+      'Teams sendTeams must reject unencrypted HTTP URLs'
+    );
+
+    await assert.rejects(
+      async () => {
+        await dispatcher.sendTeams('https://evil-server.attacker.com/steal-logs', {
+          title: 'Alert',
+          level: 'error',
+          message: 'Error message',
+          timestamp: Date.now(),
+          source: 'test'
+        });
+      },
+      /Only verified Microsoft\/Office webhook domains are permitted/,
+      'Teams sendTeams must reject untrusted / third-party arbitrary destination domains'
+    );
+
+    await assert.rejects(
+      async () => {
+        await dispatcher.sendTeams('https://169.254.169.254/latest/meta-data', {
+          title: 'Alert',
+          level: 'error',
+          message: 'Error message',
+          timestamp: Date.now(),
+          source: 'test'
+        });
+      },
+      /Only verified Microsoft\/Office webhook domains are permitted/,
+      'Teams sendTeams must reject cloud metadata endpoints and SSRF IP destinations'
+    );
+
+    // 3. Verify handler.ts does not require or export node:fs
+    const handlerSource = readFileSync('./src/middleware/handler.ts', 'utf8');
+    assert.strictEqual(
+      handlerSource.includes("from 'node:fs'"),
+      false,
+      'handler.ts must NOT import node:fs'
+    );
+
+    tracer.stop();
+    tracer.sqlStore.close();
+  } finally {
+    if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+  }
+});
+
 
 
 
