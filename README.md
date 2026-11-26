@@ -862,8 +862,9 @@ Navigate in your browser to: **`http://localhost:8000/tracernest`**
 - **Zero new ports opened.**
 - **Zero extra servers or background daemons.**
 - Intercepts all incoming API requests and visualizes execution times, status codes, and payloads live in real time.
+- Mounts all 25+ endpoints on your port (Authentication, RBAC User Management, Live SSE Log Streaming, Payload Decryption, NDJSON Export, System Health, Metrics, Retention Policies, Alert Integrations, and Excluded Routes).
 
-*For complete setup options, Monolog 3 integration, and Docker examples, see the [Laravel 13 Documentation Guide](https://github.com/ankit-kumar-khandelwal/tracernest-logger/blob/main/docs/laravel.md).*
+*For the complete routing table, Monolog 3 integration, and Docker examples, see the [Laravel 13 Documentation & Route Catalog](https://github.com/ankit-kumar-khandelwal/tracernest-logger/blob/main/docs/laravel.md).*
 
 ---
 

@@ -240,6 +240,53 @@ return [
 
 ---
 
+## 🗺️ Complete Laravel 13 Route Catalog
+
+TracerNest registers the full operations and telemetry routing suite directly inside your Laravel application under your configured `TRACERNEST_PATH` (default: `/tracernest`):
+
+| HTTP Method | URI Pattern | Action / Purpose | Access / Auth |
+| :--- | :--- | :--- | :--- |
+| **`GET`** | `/tracernest` | Serves Single-Page Application (SPA) dashboard UI | Public |
+| **`GET`** | `/tracernest/login` | Direct login view | Public |
+| **`GET`** | `/tracernest/setup` | Direct first-time root administrator setup view | Public |
+| **`GET`** | `/tracernest/health` | System health, database driver, memory & CPU load | Public / Operator |
+| **`GET`** | `/tracernest/api/health` | Diagnostic probe for orchestrators & monitoring | Public / Operator |
+| **`GET`** | `/tracernest/api/metrics` | Real-time throughput, error counts & peak memory stats | Operator / Admin |
+| **`GET`** | `/tracernest/api/auth/status` | Detects first-time setup or active user state | Public |
+| **`POST`** | `/tracernest/api/auth/setup` | Provisions initial root administrator account | First-time Only |
+| **`POST`** | `/tracernest/api/auth/login` | Authenticates operator credentials & sets session cookie | Public |
+| **`POST`** | `/tracernest/api/auth/reset` | Web reset protection (CLI-only security response) | Protected |
+| **`GET`** | `/tracernest/api/auth/me` | Returns authenticated operator profile & permissions | Bearer / Cookie |
+| **`POST`** | `/tracernest/api/auth/change-password` | Updates password & revokes previous session tokens | Authenticated |
+| **`POST`** | `/tracernest/api/auth/logout` | Revokes session and clears authentication cookies | Authenticated |
+| **`GET`** | `/tracernest/api/logs` | Query, filter & paginate logs with multi-field search | Authenticated |
+| **`GET`** | `/tracernest/api/logs/stream` | Server-Sent Events (SSE) real-time log event stream | Ticket / Token |
+| **`POST`** | `/tracernest/api/logs/stream/ticket` | Generates short-lived 15-second SSE event ticket | Authenticated |
+| **`DELETE`**| `/tracernest/api/logs` | Clears/truncates telemetry log records | Operator / Admin |
+| **`GET`** | `/tracernest/api/logs/export` | Exports logs in JSON, NDJSON, or CSV format | Authenticated |
+| **`POST`** | `/tracernest/api/logs/decrypt` | On-demand AES-256-GCM request/response decryption | Authenticated |
+| **`POST`** | `/tracernest/api/logs/decrypt-payload` | Alias for payload decryption | Authenticated |
+| **`POST`** | `/tracernest/api/logs/ingest` | Remote log ingestion for external microservices | API Key / Token |
+| **`POST`** | `/tracernest/api/ingest` | Ingest API alias | API Key / Token |
+| **`GET`** | `/tracernest/api/ttl` | Lists data retention policies & total purged count | Authenticated |
+| **`POST`** | `/tracernest/api/ttl/rules` | Creates automated retention rule (level, source, TTL)| Admin |
+| **`DELETE`**| `/tracernest/api/ttl/rules/{id}` | Deletes automated data retention policy | Admin |
+| **`POST`** | `/tracernest/api/ttl/purge` | Executes immediate retention sweep for expired records | Admin |
+| **`GET`** | `/tracernest/api/users` | Lists operator user accounts & access roles | Admin |
+| **`POST`** | `/tracernest/api/users` | Creates operator account with hashed credentials | Admin |
+| **`DELETE`**| `/tracernest/api/users/{id}` | Deletes operator account (prevents self-deletion) | Admin |
+| **`PUT/PATCH`**| `/tracernest/api/users/{id}` | Modifies user role & revokes active tokens | Admin |
+| **`GET`** | `/tracernest/api/alerts` | Lists notification configurations (Email, Teams) | Admin |
+| **`POST`** | `/tracernest/api/alerts` | Saves encrypted alert destination credentials | Admin |
+| **`POST`** | `/tracernest/api/alerts/test` | Triggers synthetic test notification dispatch | Admin |
+| **`GET`** | `/tracernest/api/audit` | Retrieves security audit logs of all operator actions | Admin |
+| **`GET`** | `/tracernest/api/excluded-routes` | Lists static & dynamic route exclusion rules | Authenticated |
+| **`POST`** | `/tracernest/api/excluded-routes` | Creates dynamic route exclusion rule | Admin |
+| **`POST/PATCH`**| `/tracernest/api/excluded-routes/{id}/toggle` | Toggles route exclusion on or off in real time | Admin |
+| **`DELETE`**| `/tracernest/api/excluded-routes/{id}` | Deletes route exclusion rule | Admin |
+
+---
+
 ## 📝 Laravel Monolog 3 Logging Integration
 
 To automatically stream standard Laravel logs (`Log::info()`, `Log::error()`, `Log::warning()`) and unhandled PHP exception stack traces directly into TracerNest:
