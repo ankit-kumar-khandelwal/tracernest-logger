@@ -1,69 +1,76 @@
-# Laravel 13 Integration Guide (Zero Extra Port Required)
+# Laravel 13 Telemetry & Observability Integration
 
 TracerNest provides native, first-class telemetry observability and real-time flight recording for **Laravel 13** (as well as Laravel 12 and 11).
 
 > [!IMPORTANT]
-> **NO NEW PORTS OPENED**: You do **NOT** need to open any extra port or run a separate background process. TracerNest mounts directly inside your existing Laravel application on the **exact same port** (e.g. `http://localhost:8000/tracernest` or `https://myapp.com/tracernest`).
+> **NO EXTRA PORTS REQUIRED**: TracerNest mounts directly inside your existing Laravel application on the **exact same port** (e.g. `http://localhost:8000/tracernest` or `https://myapp.com/tracernest`). **No extra ports, second servers, background daemons, or cloud subscriptions are required.**
 
 ---
 
-## Architecture Overview (Zero Port Overhead)
+## 🏛️ Architecture & Topology (Zero Port Overhead)
 
-```mermaid
-flowchart TD
-    Client["Client Browser / Mobile App"] --> LaravelPort["Existing Laravel Port\n(e.g. Port 8000 / 80 / 443)"]
-    
-    subgraph LaravelInstance ["Laravel 13 Application"]
-        Router{"Laravel Router"}
-        AppAPI["Application Routes\n(/api/users, /checkout)"]
-        TNRoute["TracerNest Route\n(/tracernest)"]
-        Middleware["TracerNestMiddleware\n(HTTP Flight Recorder)"]
-        Controller["TracerNestController\n(Dashboard & Telemetry Engine)"]
-        
-        Router -->|Standard Traffic| AppAPI
-        AppAPI --> Middleware
-        Router -->|/tracernest| TNRoute
-        TNRoute --> Controller
-    end
+In Laravel 13, TracerNest integrates directly into Laravel's HTTP pipeline and shared database connection. Incoming API traffic is intercepted by `TracerNestMiddleware`, while dashboard requests to `/tracernest` are served directly by `TracerNestController` on the exact same HTTP port:
 
-    LaravelPort --> Router
-    
-    subgraph Storage ["Application Database (MySQL / SQLite)"]
-        DB[("tracenest_logs Table\n(Shared Connection)")]
-    end
-
-    Middleware -- "0ms direct insert" --> DB
-    Controller -- "Query & Live SSE Stream" --> DB
+```text
++-----------------------------------------------------------------------------------+
+|                        Client Browser / Mobile App / API                          |
++-----------------------------------------------------------------------------------+
+                                         │
+                                         ▼ [Single Application Port: e.g. 8000 / 443]
++───────────────────────────────────────────────────────────────────────────────────+
+| Laravel 13 Application Runtime (PHP 8.2+ / Octane / FrankenPHP / Nginx)           |
+|                                                                                   |
+|  ┌─────────────────────────────────────────────────────────────────────────────┐  |
+|  │ Laravel Router                                                              │  |
+|  └───────┬─────────────────────────────────────────────────────────────┬───────┘  |
+|          │                                                             │          |
+|          ▼ [Standard API & Web Routes]                                 ▼ [/tracernest/*]
+|  ┌────────────────────────────────────────┐       ┌────────────────────────────┐  |
+|  │ TracerNestMiddleware                   │       │ TracerNestController       │  |
+|  │ • Intercepts Method, URL, Status       │       │ • Serves Embedded SPA UI   │  |
+|  │ • Captures Duration (0.01ms precision) │       │ • Streams Real-time SSE    │  |
+|  │ • Redacts Passwords, Tokens & Cards    │       │ • Executes Filter Queries  │  |
+|  │ • Respects Body Size & Excluded Routes │       │ • Authenticates Operators  │  |
+|  └───────────────────┬────────────────────┘       └────────────┬───────────────┘  |
+|                      │                                         │                  |
+|                      ▼                                         ▼                  |
+|  ┌─────────────────────────────────────────────────────────────────────────────┐  |
+|  │ Shared Database Connection (Laravel DB::connection())                       │  |
+|  │ Table: tracenest_logs (Zero Network Overhead / 0ms Direct Insert)           │  |
+|  └─────────────────────────────────────────────────────────────────────────────┘  |
++───────────────────────────────────────────────────────────────────────────────────+
 ```
 
 ---
 
-## Quick Setup (3 Simple Steps - No Extra Ports)
+## ⚡ Quick Start: 3 Simple Steps
 
 ### Step 1: Install TracerNest in Your Laravel Project
 
-Every Laravel project includes a root `package.json` for Vite. Run in your Laravel root directory:
+Every Laravel project includes a root `package.json` for frontend assets (Vite/Tailwind). Run in your Laravel root directory:
 
 ```bash
 npm install tracernest-logger
 ```
 
+*(This downloads the pre-built, zero-dependency TracerNest single-page dashboard and PHP bridge files into `node_modules/tracernest-logger/`).*
+
 ---
 
-### Step 2: Copy the Middleware & Controller into Your Laravel App
+### Step 2: Copy the Integration Bridge Files
 
-Copy the packaged bridge files directly into your Laravel `app/` directory:
+Copy the bridge files into your Laravel `app/` and `config/` directories:
 
 ```bash
-# 1. Copy Middleware
+# 1. Copy Telemetry Middleware
 mkdir -p app/Http/Middleware
 cp node_modules/tracernest-logger/integrations/laravel/TracerNestMiddleware.php app/Http/Middleware/
 
-# 2. Copy Controller
+# 2. Copy Telemetry Controller
 mkdir -p app/Http/Controllers
 cp node_modules/tracernest-logger/integrations/laravel/TracerNestController.php app/Http/Controllers/
 
-# 3. Copy Config (Optional)
+# 3. Copy Configuration File
 cp node_modules/tracernest-logger/integrations/laravel/tracernest.php config/
 ```
 
@@ -71,24 +78,25 @@ cp node_modules/tracernest-logger/integrations/laravel/tracernest.php config/
 
 ### Step 3: Register in Laravel 13
 
-#### A. Register Routes in `routes/web.php`
-
-Add **one line** to your `routes/web.php`:
+#### A. Mount Dashboard Routes in `routes/web.php`
+Add **one line** to `routes/web.php`:
 
 ```php
-// routes/web.php
 use Illuminate\Support\Facades\Route;
 
-// Mount TracerNest Dashboard on the existing Laravel port
+// Mount TracerNest Dashboard directly on your existing Laravel port
 require base_path('node_modules/tracernest-logger/integrations/laravel/routes.php');
 ```
 
 #### B. Register Middleware in `bootstrap/app.php`
-
-In Laravel 13, global middleware is registered in `bootstrap/app.php`:
+In Laravel 13, global middleware is registered inside `bootstrap/app.php`:
 
 ```php
 // bootstrap/app.php
+use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Configuration\Exceptions;
+use Illuminate\Foundation\Configuration\Middleware;
+
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
@@ -109,76 +117,189 @@ return Application::configure(basePath: dirname(__DIR__))
 
 ### Step 4: Open Your Dashboard
 
-Start your Laravel server as you normally do:
+Start your Laravel server as usual:
 
 ```bash
 php artisan serve
 ```
-*(Or access your application through Laravel Herd, Docker, FrankenPHP, or Nginx).*
+*(Or access via Laravel Herd, Docker, FrankenPHP, Laravel Octane, or Nginx).*
 
-Navigate in your browser to:
-**`http://localhost:8000/tracernest`**
+Navigate to:
+```text
+http://localhost:8000/tracernest
+```
 
 🎉 **That's it!**
-- **Zero new ports opened.**
-- **Zero extra servers or background daemons.**
-- Every request hitting your Laravel 13 API is intercepted, sanitized, and visible live in real time on the exact same port!
+* **Zero new ports opened.**
+* **Zero extra background daemons.**
+* The first time you visit `/tracernest`, enter an initial administrator username and password to create the master operator account.
+* Every HTTP request, error, and response body will stream live in real time.
 
 ---
 
-## Laravel Monolog Logging Integration
+## ⚙️ Configuration & Options Reference
 
-To also capture all standard Laravel log calls (`Log::info()`, `Log::error()`, `Log::warning()`) and unhandled PHP exception stack traces in TracerNest:
+TracerNest provides comprehensive configuration options that can be set either via **Environment Variables (`.env`)** or by customizing **`config/tracernest.php`**.
 
-1. Copy the Monolog handler:
-   ```bash
-   mkdir -p app/Logging
-   cp node_modules/tracernest-logger/integrations/laravel/TracerNestMonologHandler.php app/Logging/
-   ```
+### Environment Variables (`.env`)
 
-2. In `config/logging.php`, add `tracernest` to your logging channels:
-   ```php
-   'channels' => [
-       'stack' => [
-           'driver' => 'stack',
-           'channels' => ['single', 'tracernest'],
-           'ignore_exceptions' => false,
-       ],
+Add any of the following variables to your `.env` file to customize TracerNest behavior:
 
-       'tracernest' => [
-           'driver' => 'custom',
-           'via' => \App\Logging\TracerNestMonologHandler::class,
-           'level' => env('LOG_LEVEL', 'debug'),
-       ],
-   ],
-   ```
+```ini
+# ==============================================================================
+# TracerNest Telemetry Configuration for Laravel 13
+# ==============================================================================
 
----
+# Master switch: set to false to completely disable telemetry (e.g. in testing)
+TRACERNEST_ENABLED=true
 
-## Alternative Option: Standalone Port (Optional)
+# Storage Mode: 'database' (direct MySQL/SQLite, recommended) or 'http' (remote ingest)
+TRACERNEST_MODE=database
 
-If your team *specifically prefers* running TracerNest on an isolated internal port (e.g. `8001`), TracerNest also provides the CLI runner:
+# Custom database connection name from config/database.php (null uses default connection)
+TRACERNEST_DB_CONNECTION=mysql
 
-```json
-// package.json
-{
-  "scripts": {
-    "telemetry": "tracernest-server --port 8001"
-  }
-}
+# Database table name prefix (default: 'tracenest_')
+TRACERNEST_TABLE_PREFIX=tracenest_
+
+# URL path where the dashboard is mounted (default: '/tracernest')
+TRACERNEST_PATH=/tracernest
+
+# Master signing & encryption key (defaults to your Laravel APP_KEY)
+TRACERNEST_KEY=base64:your-laravel-app-key-here
+
+# Log retention TTL in days (logs older than this are automatically purged, 0 = unlimited)
+TRACERNEST_RETENTION_DAYS=30
+
+# Maximum request & response body size captured in bytes (default: 65536 = 64KB)
+TRACERNEST_BODY_LIMIT=65536
+
+# Remote ingestion endpoint (only used when TRACERNEST_MODE=http)
+TRACERNEST_ENDPOINT=http://127.0.0.1:8001/tracernest
 ```
 
+---
+
+### Detailed Options Catalog (`config/tracernest.php`)
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `enabled` | `bool` | `true` | Master toggle to enable or disable telemetry capture globally. |
+| `mode` | `string` | `'database'` | Telemetry write mode: `'database'` (zero-overhead direct insert) or `'http'` (remote server ingest). |
+| `connection` | `string\|null` | `null` | Name of the database connection from `config/database.php` (e.g. `'mysql'`, `'sqlite'`). `null` uses default DB. |
+| `table_prefix` | `string` | `'tracenest_'` | Prefix for generated database tables (`tracenest_logs`, `tracenest_users`). |
+| `path` | `string` | `'/tracernest'` | URI prefix for the web dashboard on your Laravel server. |
+| `key` | `string` | `env('APP_KEY')` | Secret key used for HMAC session tokens and AES-256-GCM payload encryption. |
+| `endpoint` | `string` | `'http://127.0.0.1:8001/tracernest'` | Target URL when operating in remote `'http'` mode. |
+| `exclude_routes` | `array` | `['/up', '/healthz', ...]` | Array of route paths or wildcard patterns (`'/livewire/*'`) excluded from telemetry capture. |
+| `sanitize_fields`| `array` | `['password', 'token', ...]` | Array of JSON and query parameter keys masked with `••••••••••••` before saving. |
+| `body_size_limit`| `int` | `65536` (64 KB) | Byte limit for request and response body storage to protect database and RAM overhead. |
+| `retention_days` | `int` | `30` | Number of days to retain logs before automated expiration (`expires_at`). |
+
+---
+
+### Customizing Excluded Routes & Sensitive Data Redaction
+
+In `config/tracernest.php`, you can customize route exclusions and parameters to redact:
+
+```php
+// config/tracernest.php
+
+return [
+    // ...
+    
+    // Exclude health probes, internal routes, and high-frequency polling from telemetry:
+    'exclude_routes' => [
+        '/up',                      // Laravel 11/12/13 health endpoint
+        '/healthz',                 // Kubernetes liveness probe
+        '/livewire/update',         // Livewire AJAX updates
+        '/sanctum/csrf-cookie',     // CSRF initialization
+        '/horizon/*',               // Laravel Horizon dashboard
+        '/telescope/*',             // Laravel Telescope
+    ],
+
+    // Automatically mask sensitive keys in request payloads & query strings:
+    'sanitize_fields' => [
+        'password',
+        'password_confirmation',
+        'current_password',
+        'secret',
+        'token',
+        'api_key',
+        'access_token',
+        'refresh_token',
+        'authorization',
+        'credit_card',
+        'card_number',
+        'cvv',
+        'cvc',
+        'ssn',
+    ],
+];
+```
+
+---
+
+## 📝 Laravel Monolog 3 Logging Integration
+
+To automatically stream standard Laravel logs (`Log::info()`, `Log::error()`, `Log::warning()`) and unhandled PHP exception stack traces directly into TracerNest:
+
+### 1. Copy the Monolog Handler
 ```bash
-npm run telemetry
+mkdir -p app/Logging
+cp node_modules/tracernest-logger/integrations/laravel/TracerNestMonologHandler.php app/Logging/
 ```
 
-Both modes use the exact same underlying database and UI features.
+### 2. Register the Channel in `config/logging.php`
+Add `tracernest` to your logging channels array and append it to your `stack` channel:
+
+```php
+// config/logging.php
+
+'channels' => [
+    'stack' => [
+        'driver' => 'stack',
+        'channels' => ['single', 'tracernest'],
+        'ignore_exceptions' => false,
+    ],
+
+    'tracernest' => [
+        'driver' => 'custom',
+        'via' => \App\Logging\TracerNestMonologHandler::class,
+        'level' => env('LOG_LEVEL', 'debug'),
+    ],
+    
+    // ... other channels
+],
+```
+
+Now, every log entry written via `Log::error('Order checkout failed', ['order_id' => 123])` is immediately recorded into TracerNest with its full context, channel name, and exception stack trace!
 
 ---
 
-## Key Benefits for Laravel 13 Teams
+## 🚀 Production Deployment & Scaling
 
-1. **No Extra Port Overhead:** Mounts directly on `/tracernest` inside your existing Laravel HTTP pipeline.
-2. **Zero Cloud Subscriptions:** 100% self-hosted on your own MySQL or SQLite database.
-3. **Hardware AES-256-GCM Encryption:** Sensitive healthcare or financial payloads remain encrypted at rest.
-4. **Instant Reproduction:** See the exact incoming request payload and response body for every production 500 error.
+### Laravel Octane (FrankenPHP / RoadRunner / Swoole)
+TracerNest is fully compatible with **Laravel Octane**. Because `TracerNestMiddleware` measures durations per request using `microtime(true)` and commits directly to the active database connection, it runs non-blockingly without state leakage between Octane worker loops.
+
+### MySQL Database Tuning
+For high-traffic production workloads ($> 1,000$ requests/sec):
+* TracerNest uses indexed columns (`timestamp`, `level`, `source`) and automatically applies schema optimizations.
+* Enable `retention_days` (e.g. `14` or `30`) to keep the `tracenest_logs` table lean and fast.
+* You can configure a dedicated read/write database connection via `TRACERNEST_DB_CONNECTION=telemetry_db` to isolate telemetry writes from application business data.
+
+---
+
+## 🔒 Security Best Practices for Laravel Operators
+
+1. **Protect the `/tracernest` Route in Production:**
+   You can wrap the routes in `routes/web.php` with an authentication or role-check middleware if desired:
+   ```php
+   Route::middleware(['web', 'auth', 'can:access-telemetry'])->group(function () {
+       require base_path('node_modules/tracernest-logger/integrations/laravel/routes.php');
+   });
+   ```
+2. **Reverse Proxy & Load Balancers:**
+   Ensure `TrustProxies` is properly enabled in Laravel (`bootstrap/app.php`) so `TracerNestMiddleware` extracts the true client IP via `X-Forwarded-For` or `CF-Connecting-IP`.
+3. **Payload Redaction:**
+   Always review `sanitize_fields` in `config/tracernest.php` whenever new payment or PII parameters are added to your application.

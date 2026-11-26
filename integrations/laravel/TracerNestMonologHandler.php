@@ -17,6 +17,10 @@ class TracerNestMonologHandler extends AbstractProcessingHandler
 {
     protected function write(LogRecord $record): void
     {
+        if (!config('tracernest.enabled', true)) {
+            return;
+        }
+
         $levelName = strtolower($record->level->getName());
         $level = match ($levelName) {
             'emergency', 'alert', 'critical', 'error' => 'error',
@@ -45,15 +49,20 @@ class TracerNestMonologHandler extends AbstractProcessingHandler
             'extra' => $record->extra,
         ];
 
+        $retentionDays = (int) config('tracernest.retention_days', 30);
+        $expiresAt = $retentionDays > 0 ? (int) ((microtime(true) + ($retentionDays * 86400)) * 1000) : null;
+
         // Mode 1: Direct MySQL table write (Zero HTTP overhead, shared database)
         $mode = config('tracernest.mode', 'database');
         $tableName = config('tracernest.table_prefix', 'tracenest_') . 'logs';
+        $connection = config('tracernest.connection', null);
 
         if ($mode === 'database') {
             try {
-                DB::table($tableName)->insert([
+                DB::connection($connection)->table($tableName)->insert([
                     'id' => 'log_mon_' . bin2hex(random_bytes(8)),
                     'timestamp' => (int) ($record->datetime->getTimestamp() * 1000),
+                    'expires_at' => $expiresAt,
                     'level' => $level,
                     'source' => 'laravel',
                     'message' => $record->message,
