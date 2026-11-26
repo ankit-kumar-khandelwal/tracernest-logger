@@ -11,11 +11,32 @@ function escapeHtmlServer(val: string): string {
 
 function sanitizeSvg(svg: string): string {
   if (/<script\b/i.test(svg) ||
-      /javascript:/i.test(svg) ||
-      /on\w+\s*=/i.test(svg) ||
-      /<iframe\b/i.test(svg) ||
-      /<object\b/i.test(svg) ||
-      /<embed\b/i.test(svg)) {
+    /javascript:/i.test(svg) ||
+    /on\w+\s*=/i.test(svg) ||
+    /<iframe\b/i.test(svg) ||
+    /<object\b/i.test(svg) ||
+    /<embed\b/i.test(svg)) {
+    return '';
+  }
+  return svg;
+}
+
+function escapeHtmlServer(val: string): string {
+  return String(val || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function sanitizeSvg(svg: string): string {
+  if (/<script\b/i.test(svg) ||
+    /javascript:/i.test(svg) ||
+    /on\w+\s*=/i.test(svg) ||
+    /<iframe\b/i.test(svg) ||
+    /<object\b/i.test(svg) ||
+    /<embed\b/i.test(svg)) {
     return '';
   }
   return svg;
