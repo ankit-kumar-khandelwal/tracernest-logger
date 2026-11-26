@@ -833,6 +833,7 @@ Current Release: **`1.8.9`**
 We welcome contributions of all forms from the community!
 - **[Contributing Guide](CONTRIBUTING.md):** Development setup, zero-dependency policy, and PR submission guidelines.
 - **[Code of Conduct](CODE_OF_CONDUCT.md):** Standards and expectations for an inclusive, welcoming community.
+- **[Accessibility Statement](ACCESSIBILITY.md):** Accessibility commitments, supported environments, and barrier reporting.
 - **[Security Policy](SECURITY.md):** Responsible vulnerability reporting and security architecture details.
 - **[Changelog](CHANGELOG.md):** Release history and migration notes.
 
