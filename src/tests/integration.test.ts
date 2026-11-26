@@ -5,7 +5,7 @@ import { IncomingMessage, ServerResponse } from 'node:http';
 import { EventEmitter } from 'node:events';
 import { Socket } from 'node:net';
 import vm from 'node:vm';
-import { TracerNestLogger, TraceNest, LogVault, DEFAULT_TRACERNEST_LOGO, DEFAULT_TRACERNEST_BANNER, DEFAULT_TRACENEST_LOGO, DEFAULT_TRACENEST_BANNER } from '../index';
+import { TracerNestLogger, TraceNest, LogVault, DEFAULT_TRACERNEST_LOGO, DEFAULT_TRACERNEST_BANNER, DEFAULT_TRACENEST_LOGO, DEFAULT_TRACENEST_BANNER, extractRealIp } from '../index';
 import { getDashboardHtml } from '../ui/dashboard-html';
 
 interface MockResponseResult {
@@ -2629,6 +2629,251 @@ test('Integration: Laravel 13 Telemetry Ingestion API (POST /api/logs/ingest)', 
     if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
   }
 });
+
+test('Security: AlertDispatcher SMTP CRLF, Dot-Stuffing & Teams Webhook SSRF Validation', async () => {
+  const testDir = `./test_security_alerts_${Date.now()}`;
+  const tracer = new TracerNestLogger({
+    dataDir: testDir,
+    masterKey: '0123456789abcdef0123456789abcdef'
+  });
+
+  try {
+    const dispatcher = (tracer as any).alertDispatcher;
+    assert.ok(dispatcher, 'AlertDispatcher must exist');
+
+    // 1. CRLF Injection Defense in SMTP
+    await assert.rejects(
+      async () => {
+        await dispatcher.sendEmail({
+          host: 'smtp.example.com',
+          port: 465,
+          secure: true,
+          from: 'admin@example.com\r\nBcc: victim@example.com',
+          to: 'alerts@example.com',
+          subject: 'Incident Alert',
+          body: 'Log message'
+        });
+      },
+      /CRLF injection attempt detected/,
+      'SMTP sendEmail must reject CRLF characters in from address'
+    );
+
+    await assert.rejects(
+      async () => {
+        await dispatcher.sendEmail({
+          host: 'smtp.example.com',
+          port: 465,
+          secure: true,
+          from: 'admin@example.com',
+          to: 'alerts@example.com\r\nSubject: Injected Subject',
+          subject: 'Incident Alert',
+          body: 'Log message'
+        });
+      },
+      /CRLF injection attempt detected/,
+      'SMTP sendEmail must reject CRLF characters in to address'
+    );
+
+    await assert.rejects(
+      async () => {
+        await dispatcher.sendEmail({
+          host: 'smtp.example.com',
+          port: 465,
+          secure: true,
+          from: 'admin@example.com',
+          to: 'alerts@example.com',
+          subject: 'Header\r\nInjected: True',
+          body: 'Log message'
+        });
+      },
+      /CRLF injection attempt detected/,
+      'SMTP sendEmail must reject CRLF characters in subject'
+    );
+
+    // 2. Microsoft Teams Webhook HTTPS & Domain Whitelist Validation
+    await assert.rejects(
+      async () => {
+        await dispatcher.sendTeams('http://office.com/webhook', {
+          title: 'Alert',
+          level: 'error',
+          message: 'Error message',
+          timestamp: Date.now(),
+          source: 'test'
+        });
+      },
+      /Microsoft Teams Webhook URL must use HTTPS/,
+      'Teams sendTeams must reject unencrypted HTTP URLs'
+    );
+
+    await assert.rejects(
+      async () => {
+        await dispatcher.sendTeams('https://evil-server.attacker.com/steal-logs', {
+          title: 'Alert',
+          level: 'error',
+          message: 'Error message',
+          timestamp: Date.now(),
+          source: 'test'
+        });
+      },
+      /Only verified Microsoft\/Office webhook domains are permitted/,
+      'Teams sendTeams must reject untrusted / third-party arbitrary destination domains'
+    );
+
+    await assert.rejects(
+      async () => {
+        await dispatcher.sendTeams('https://169.254.169.254/latest/meta-data', {
+          title: 'Alert',
+          level: 'error',
+          message: 'Error message',
+          timestamp: Date.now(),
+          source: 'test'
+        });
+      },
+      /Only verified Microsoft\/Office webhook domains are permitted/,
+      'Teams sendTeams must reject cloud metadata endpoints and SSRF IP destinations'
+    );
+
+    // 3. Verify handler.ts does not require or export node:fs
+    const handlerSource = readFileSync('./src/middleware/handler.ts', 'utf8');
+    assert.strictEqual(
+      handlerSource.includes("from 'node:fs'"),
+      false,
+      'handler.ts must NOT import node:fs'
+    );
+
+    tracer.stop();
+    tracer.sqlStore.close();
+  } finally {
+    if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+  }
+});
+
+test('Integration: Security Hardening - Dashboard HTML Escaping, Safe basePath, and CSP Hardening', async () => {
+  // 1. Verify appTitle context-appropriate escaping
+  const maliciousTitle = '</title><script>alert("xss-title")</script>" onfocus="alert(1)';
+  const htmlWithBadTitle = getDashboardHtml('/logvault', maliciousTitle);
+  assert.ok(!htmlWithBadTitle.includes('</title><script>alert("xss-title")</script>'), 'appTitle must not allow </title> breakout');
+  assert.ok(htmlWithBadTitle.includes('&lt;/title&gt;&lt;script&gt;alert(&quot;xss-title&quot;)&lt;/script&gt;'), 'appTitle must be HTML entity escaped in <title>');
+  assert.ok(!htmlWithBadTitle.includes('title="' + maliciousTitle + '"'), 'appTitle attribute must be escaped');
+
+  // 2. Verify customLogo validation & SVG script rejection
+  const maliciousSvg = '<svg onload="alert(1)"><script>alert("xss")</script><circle cx="10" cy="10" r="5"/></svg>';
+  const htmlWithBadSvg = getDashboardHtml('/logvault', 'Vault', maliciousSvg);
+  assert.ok(!htmlWithBadSvg.includes(Buffer.from(maliciousSvg).toString('base64')), 'Malicious SVG containing scripts/onload must be rejected');
+  assert.ok(htmlWithBadSvg.includes(DEFAULT_TRACERNEST_LOGO), 'Rejected malicious SVG must safely fallback to DEFAULT_TRACERNEST_LOGO');
+
+  const jsUrlLogo = 'javascript:alert(1)';
+  const htmlWithJsLogo = getDashboardHtml('/logvault', 'Vault', jsUrlLogo);
+  assert.ok(!htmlWithJsLogo.includes('href="javascript:alert(1)"'), 'javascript: URI in customLogo must not be rendered');
+  assert.ok(!htmlWithJsLogo.includes('src="javascript:alert(1)"'), 'javascript: URI in customLogo must not be rendered in img src');
+
+  const quoteBreakoutLogo = '" onerror="alert(1)" class="xss';
+  const htmlWithQuoteLogo = getDashboardHtml('/logvault', 'Vault', quoteBreakoutLogo);
+  assert.ok(!htmlWithQuoteLogo.includes('src="" onerror="alert(1)"'), 'Quote breakout in customLogo must be sanitized or escaped');
+
+  // 3. Verify basePath safe JSON embedding in client JavaScript
+  const scriptBreakoutBasePath = '/vault</script><script>alert("breakout")</script>';
+  const htmlWithBreakoutPath = getDashboardHtml(scriptBreakoutBasePath, 'Vault');
+  assert.ok(!htmlWithBreakoutPath.includes('return "/vault</script>'), 'basePath must not contain unescaped </script> tag inside JS string');
+  assert.ok(htmlWithBreakoutPath.includes('\\u003c/script\\u003e'), 'basePath < and > must be unicode-escaped for safe inline JS embedding');
+
+  // 4. Verify CSP header contains hardened directives
+  const testSqlite = './integ_csp_harden.sqlite';
+  const testSql = './integ_csp_harden.sql';
+  if (existsSync(testSqlite)) unlinkSync(testSqlite);
+  if (existsSync(testSql)) unlinkSync(testSql);
+
+  const app = new TracerNestLogger({
+    path: '/logvault',
+    sqliteFilePath: testSqlite,
+    sqlFilePath: testSql
+  });
+
+  try {
+    const mock = createMockReqRes({ url: '/logvault' });
+    await app.handleRequest(mock.req, mock.res);
+    const resp = mock.getResponse();
+    const csp = resp.headers['content-security-policy'];
+    assert.ok(csp, 'CSP header must be present');
+    assert.ok(csp.includes("object-src 'none'"), 'CSP must forbid plugins via object-src none');
+    assert.ok(csp.includes("base-uri 'self'"), 'CSP must restrict base-uri to self');
+    assert.ok(csp.includes("frame-ancestors 'none'"), 'CSP must prevent framing via frame-ancestors none');
+    assert.ok(csp.includes("connect-src 'self'"), 'CSP must enforce connect-src self');
+  } finally {
+    app.stop();
+    if (existsSync(testSqlite)) unlinkSync(testSqlite);
+    if (existsSync(testSql)) unlinkSync(testSql);
+  }
+});
+
+test('Integration: Client IP & Real IP Extraction and Dialog Box Display', async () => {
+  // 1. Verify extractRealIp utility function
+  const reqWithXRealIp = {
+    headers: { 'x-real-ip': '198.51.100.99' },
+    socket: { remoteAddress: '127.0.0.1' }
+  } as any;
+  assert.strictEqual(extractRealIp(reqWithXRealIp), '198.51.100.99');
+
+  const reqWithCfIp = {
+    headers: { 'cf-connecting-ip': '203.0.113.88' },
+    socket: { remoteAddress: '10.0.0.1' }
+  } as any;
+  assert.strictEqual(extractRealIp(reqWithCfIp), '203.0.113.88');
+
+  const reqDirect = {
+    headers: {},
+    socket: { remoteAddress: '127.0.0.1' }
+  } as any;
+  assert.strictEqual(extractRealIp(reqDirect), '127.0.0.1');
+
+  // 2. Verify HttpLogger captures both clientIp and realIp in metadata
+  const testDir = `./test_ip_dialog_${Date.now()}`;
+  const vault = new TracerNestLogger({
+    dataDir: testDir,
+    path: '/logvault'
+  });
+
+  try {
+    const middleware = vault.middleware();
+    const mockReqRes = createMockReqRes({
+      method: 'GET',
+      url: '/api/v1/test-ip',
+      headers: {
+        'x-real-ip': '198.51.100.44',
+        'user-agent': 'Mozilla/5.0'
+      }
+    });
+
+    await new Promise<void>((resolve) => {
+      middleware(mockReqRes.req, mockReqRes.res, () => {
+        mockReqRes.res.statusCode = 200;
+        mockReqRes.res.end(JSON.stringify({ ok: true }));
+        resolve();
+      });
+    });
+
+    const logs = vault.ringBuffer.query({ source: 'http' }).logs;
+    assert.strictEqual(logs.length, 1);
+    assert.strictEqual(logs[0].metadata?.http?.clientIp, '127.0.0.1');
+    assert.strictEqual(logs[0].metadata?.http?.realIp, '198.51.100.44');
+
+    // 3. Verify getDashboardHtml dialog box elements for Client IP along with Real IP
+    const html = getDashboardHtml('/logvault');
+    assert.ok(html.includes('id="lmHttpBannerIp"'), 'Modal must have Client IP in banner');
+    assert.ok(html.includes('id="lmHttpBannerRealIp"'), 'Modal must have Real IP in banner');
+    assert.ok(html.includes('id="lmReqClientInfo"'), 'Modal must have Client IP in request payload header');
+    assert.ok(html.includes('id="lmReqRealIpInfo"'), 'Modal must have Real IP in request payload header');
+    assert.ok(html.includes('id="lmMetaIpItem"'), 'Modal must have Client IP in meta bar');
+    assert.ok(html.includes('id="lmMetaRealIpItem"'), 'Modal must have Real IP in meta bar');
+
+    vault.stop();
+  } finally {
+    if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+  }
+});
+
+
+
 
 
 

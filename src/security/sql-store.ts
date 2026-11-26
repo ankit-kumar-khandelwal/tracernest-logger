@@ -1379,7 +1379,8 @@ export class SqlStore {
 
         const matchesMsg = SafeRegex.test(regex, entry.message);
         const matchesUrl = entry.metadata?.http?.url ? SafeRegex.test(regex, entry.metadata.http.url) : false;
-        const matchesIp = entry.metadata?.http?.clientIp ? SafeRegex.test(regex, entry.metadata.http.clientIp) : false;
+        const matchesIp = (entry.metadata?.http?.clientIp ? SafeRegex.test(regex, entry.metadata.http.clientIp) : false) ||
+          (entry.metadata?.http?.realIp ? SafeRegex.test(regex, entry.metadata.http.realIp) : false);
         const matchesMeta = entry.metadata ? SafeRegex.test(regex, JSON.stringify(entry.metadata)) : false;
 
         if (matchesMsg || matchesUrl || matchesIp || matchesMeta) {

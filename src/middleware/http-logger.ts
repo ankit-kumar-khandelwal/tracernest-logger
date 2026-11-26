@@ -7,7 +7,7 @@ import { RingBuffer } from '../core/ring-buffer';
 import { StreamManager } from '../core/stream-manager';
 import { TTLManager } from '../core/ttl-manager';
 import { AlertDispatcher } from '../alerts/alert-dispatcher';
-import { extractClientIp } from '../security/client-ip';
+import { extractClientIp, extractRealIp } from '../security/client-ip';
 
 export class HttpLogger {
   private ringBuffer: RingBuffer;
@@ -173,6 +173,7 @@ export class HttpLogger {
       const startTime = Date.now();
       const method = (req.method || 'GET').toUpperCase();
       const clientIp = this.getClientIp(req);
+      const realIp = this.getRealIp(req);
       const safeHeaders = this.sanitizeHeaders(req.headers);
 
       // 1. Capture Request Body
@@ -332,6 +333,7 @@ export class HttpLogger {
           statusCode,
           durationMs,
           clientIp,
+          realIp,
           headers: safeHeaders,
           requestBody: finalReqBody,
           responseBody: finalResBody,
@@ -704,6 +706,10 @@ export class HttpLogger {
 
   private getClientIp(req: IncomingMessage): string {
     return extractClientIp(req, this.trustProxy);
+  }
+
+  private getRealIp(req: IncomingMessage): string {
+    return extractRealIp(req);
   }
 }
 

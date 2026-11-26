@@ -21,7 +21,7 @@ export { TTLManager } from './core/ttl-manager';
 export { GracefulShutdownManager } from './core/graceful-shutdown';
 export { CryptoSecurity } from './security/crypto';
 export { FastCrypto } from './security/fast-crypto';
-export { extractClientIp } from './security/client-ip';
+export { extractClientIp, extractRealIp } from './security/client-ip';
 export { RBACManager } from './security/rbac';
 export { UserStore } from './security/user-store';
 export { SqlStore } from './security/sql-store';
