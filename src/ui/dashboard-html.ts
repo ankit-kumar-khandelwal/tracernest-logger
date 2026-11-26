@@ -1,5 +1,7 @@
 import { DEFAULT_TRACERNEST_LOGO, DEFAULT_TRACERNEST_BANNER, DEFAULT_TRACENEST_LOGO, DEFAULT_TRACENEST_BANNER } from '../constants';
 
+
+
 function escapeHtmlServer(val: string): string {
   return String(val || '')
     .replace(/&/g, '&amp;')
@@ -11,11 +13,11 @@ function escapeHtmlServer(val: string): string {
 
 function sanitizeSvg(svg: string): string {
   if (/<script\b/i.test(svg) ||
-      /javascript:/i.test(svg) ||
-      /on\w+\s*=/i.test(svg) ||
-      /<iframe\b/i.test(svg) ||
-      /<object\b/i.test(svg) ||
-      /<embed\b/i.test(svg)) {
+    /javascript:/i.test(svg) ||
+    /on\w+\s*=/i.test(svg) ||
+    /<iframe\b/i.test(svg) ||
+    /<object\b/i.test(svg) ||
+    /<embed\b/i.test(svg)) {
     return '';
   }
   return svg;
@@ -2919,7 +2921,8 @@ ${brandTitleHtml}
             </div>
             <div style="display:flex; align-items:center; gap:0.65rem; flex-wrap:wrap; font-size:0.75rem; color:var(--text-secondary); margin-top:2px;">
               <span class="api-pill" id="lmHttpBannerLatency" title="Execution Duration">⏱️ 0ms</span>
-              <span class="api-pill api-pill-ip" id="lmHttpBannerIp" title="Client IP Address">🌐 127.0.0.1</span>
+              <span class="api-pill api-pill-ip" id="lmHttpBannerIp" title="Client IP Address">🌐 Client IP: 127.0.0.1</span>
+              <span class="api-pill api-pill-ip" id="lmHttpBannerRealIp" title="Real IP Address" style="display:none; color:#34d399; background:rgba(16,185,129,0.1); border-color:rgba(16,185,129,0.25);">📍 Real IP: -</span>
               <span class="api-pill" id="lmHttpBannerTime" title="Timestamp">📅 -</span>
             </div>
           </div>
@@ -2964,6 +2967,10 @@ ${brandTitleHtml}
           <div id="lmMetaIpItem" class="meta-item" style="display:none;">
             <span class="meta-item-label">CLIENT IP</span>
             <span id="lmIpText" class="meta-item-val" style="color:#38bdf8;">-</span>
+          </div>
+          <div id="lmMetaRealIpItem" class="meta-item" style="display:none;">
+            <span class="meta-item-label">REAL IP</span>
+            <span id="lmRealIpText" class="meta-item-val" style="color:#34d399;">-</span>
           </div>
         </div>
 
@@ -3014,8 +3021,9 @@ ${brandTitleHtml}
                     </button>
                   </div>
                 </div>
-                <div class="payload-header-sub">
+                <div class="payload-header-sub" style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
                   <span id="lmReqClientInfo" class="payload-info-meta">Client IP: 127.0.0.1</span>
+                  <span id="lmReqRealIpInfo" class="payload-info-meta" style="color:#34d399; display:none;">Real IP: -</span>
                   <span id="lmReqEncBadge" class="badge badge-encrypted" style="display:none;">🔒 AES-256-GCM Encrypted</span>
                 </div>
               </div>
@@ -3976,8 +3984,25 @@ ${brandTitleHtml}
           const latEl = document.getElementById('lmHttpBannerLatency');
           if (latEl) latEl.textContent = '⏱️ ' + (http.durationMs !== undefined ? http.durationMs + 'ms' : '0ms');
 
+          const clientIpVal = http.clientIp || entry.metadata?.clientIp || entry.metadata?.ip || '127.0.0.1';
+          const realIpVal = http.realIp || entry.metadata?.realIp || http.headers?.['x-real-ip'] || http.headers?.['cf-connecting-ip'] || http.headers?.['true-client-ip'] || http.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || clientIpVal;
+
           const ipEl = document.getElementById('lmHttpBannerIp');
-          if (ipEl) ipEl.textContent = '🌐 ' + (http.clientIp || '127.0.0.1');
+          if (ipEl) {
+            ipEl.textContent = '🌐 Client IP: ' + clientIpVal;
+            ipEl.title = 'Client IP Address: ' + clientIpVal;
+          }
+
+          const realIpEl = document.getElementById('lmHttpBannerRealIp');
+          if (realIpEl) {
+            if (realIpVal) {
+              realIpEl.textContent = '📍 Real IP: ' + realIpVal;
+              realIpEl.title = 'Real IP Address: ' + realIpVal;
+              realIpEl.style.display = 'inline-flex';
+            } else {
+              realIpEl.style.display = 'none';
+            }
+          }
 
           const timeEl = document.getElementById('lmHttpBannerTime');
           if (timeEl) timeEl.textContent = '📅 ' + d.toLocaleTimeString();
@@ -4014,7 +4039,16 @@ ${brandTitleHtml}
         // Populate Request Card Sub-header & Controls
         const reqClientEl = document.getElementById('lmReqClientInfo');
         if (reqClientEl) {
-          reqClientEl.textContent = 'Client IP: ' + (http.clientIp || entry.metadata?.clientIp || entry.metadata?.ip || '127.0.0.1');
+          reqClientEl.textContent = 'Client IP: ' + clientIpVal;
+        }
+        const reqRealIpEl = document.getElementById('lmReqRealIpInfo');
+        if (reqRealIpEl) {
+          if (realIpVal) {
+            reqRealIpEl.textContent = 'Real IP: ' + realIpVal;
+            reqRealIpEl.style.display = 'inline';
+          } else {
+            reqRealIpEl.style.display = 'none';
+          }
         }
 
         if (reqEncBadge) {
@@ -4129,13 +4163,24 @@ ${brandTitleHtml}
       }
 
       const ipItem = document.getElementById('lmMetaIpItem');
+      const realIpItem = document.getElementById('lmMetaRealIpItem');
       const clientIp = http?.clientIp || entry.metadata?.ip || entry.metadata?.clientIp;
+      const realIp = http?.realIp || entry.metadata?.realIp || http?.headers?.['x-real-ip'] || http?.headers?.['cf-connecting-ip'] || http?.headers?.['true-client-ip'] || http?.headers?.['x-forwarded-for']?.split(',')[0]?.trim();
+
       if (clientIp) {
         if (ipItem) ipItem.style.display = 'flex';
         const ipEl = document.getElementById('lmIpText');
         if (ipEl) ipEl.textContent = clientIp;
       } else if (ipItem) {
         ipItem.style.display = 'none';
+      }
+
+      if (realIp) {
+        if (realIpItem) realIpItem.style.display = 'flex';
+        const realIpEl = document.getElementById('lmRealIpText');
+        if (realIpEl) realIpEl.textContent = realIp;
+      } else if (realIpItem) {
+        realIpItem.style.display = 'none';
       }
 
       const msgEl = document.getElementById('lmFullMessage');
@@ -4430,6 +4475,7 @@ ${brandTitleHtml}
         const safeUrl = escapeHtml(http.url || '');
         const safeDuration = escapeHtml(String(http.durationMs || 0));
         const safeClientIp = escapeHtml(http.clientIp || '');
+        const safeRealIp = escapeHtml(http.realIp || http.headers?.['x-real-ip'] || http.headers?.['cf-connecting-ip'] || '');
         const safeId = escapeHtml(entry.id);
 
         const hasReq = http.requestBody !== undefined && http.requestBody !== null;
@@ -4447,14 +4493,14 @@ ${brandTitleHtml}
               '<span class="status-badge ' + statusClass + '">' + safeStatusCode + '</span>' +
               '<span style="font-weight:600; color:#fff; font-family:var(--font-mono); font-size:0.8rem;">' + safeUrl + '</span>' +
               '<span style="margin-left:auto; color:#94a3b8; font-size:0.75rem;">' + safeDuration + 'ms</span>' +
-              '<span style="color:#64748b; font-size:0.72rem;">' + safeClientIp + '</span>' +
+              '<span style="color:#64748b; font-size:0.72rem;" title="Client IP: ' + safeClientIp + (safeRealIp && safeRealIp !== safeClientIp ? ' | Real IP: ' + safeRealIp : '') + '">' + safeClientIp + (safeRealIp && safeRealIp !== safeClientIp ? ' <span style="color:#34d399;">(Real: ' + safeRealIp + ')</span>' : '') + '</span>' +
             '</div>' +
             '<div class="http-inspector-grid">' +
               '<div class="payload-card">' +
                 '<div class="payload-title-bar">' +
                   '<span style="color:#38bdf8; display:flex; align-items:center; gap:0.35rem;">' +
                     '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="M6 11l6 6 6-6"/><path d="M19 21H5"/></svg>' +
-                    '<span>Request Payload (' + (safeClientIp || 'client') + ')</span>' +
+                    '<span>Request Payload (Client: ' + (safeClientIp || 'client') + (safeRealIp && safeRealIp !== safeClientIp ? ' &bull; Real: ' + safeRealIp : '') + ')</span>' +
                     (isReqEnc ? ' <span data-enc-badge="' + safeId + '_req" class="badge badge-encrypted">🔒 Encrypted</span>' : '') +
                   '</span>' +
                   '<div style="display:flex; gap:4px;">' +
@@ -4672,6 +4718,7 @@ ${brandTitleHtml}
         const safeStatusClass = escapeHtml(statusCode >= 500 ? 'status-5xx' : (statusCode >= 400 ? 'status-4xx' : 'status-2xx'));
         const safeTimeStr = escapeHtml(new Date(e.timestamp).toLocaleTimeString());
         const safeClientIp = escapeHtml(h.clientIp || '127.0.0.1');
+        const safeRealIp = escapeHtml(h.realIp || h.headers?.['x-real-ip'] || h.headers?.['cf-connecting-ip'] || '');
         const safeDuration = escapeHtml(String(h.durationMs || 0));
         const safeId = escapeHtml(e.id);
         const rawUrl = h.url || e.message || '';
@@ -4694,7 +4741,7 @@ ${brandTitleHtml}
             '<span class="status-badge ' + safeStatusClass + '">' + safeStatusCode + '</span>' +
             '<span class="api-row-url" title="' + safeUrl + '">' + highlightedUrl + '</span>' +
             '<span class="api-pill" title="Execution Latency">⏱️ ' + safeDuration + 'ms</span>' +
-            '<span class="api-pill api-pill-ip" title="Client IP Address" style="display:inline-flex; align-items:center; gap:4px;"><svg class="icon icon-sm" style="width:10px; height:10px;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg>' + highlightedIp + '</span>' +
+            '<span class="api-pill api-pill-ip" title="Client IP: ' + safeClientIp + (safeRealIp && safeRealIp !== safeClientIp ? ' | Real IP: ' + safeRealIp : '') + '" style="display:inline-flex; align-items:center; gap:4px;"><svg class="icon icon-sm" style="width:10px; height:10px;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg>' + highlightedIp + (safeRealIp && safeRealIp !== safeClientIp ? '<span style="color:#34d399; margin-left:3px;">(Real: ' + safeRealIp + ')</span>' : '') + '</span>' +
             '<span style="color:#64748b; font-size:0.72rem; font-family:var(--font-mono);">' + safeTimeStr + '</span>' +
             '<span class="btn" style="padding:2px 8px; font-size:0.68rem; margin-left:auto;" onclick="event.stopPropagation(); toggleApiRow(this.dataset.id)" data-id="' + safeId + '">' +
               '<span id="apiArrow_' + safeId + '">Inspect ▾</span>' +
@@ -4705,7 +4752,7 @@ ${brandTitleHtml}
               '<div class="payload-card">' +
                 '<div class="payload-title-bar">' +
                   '<span style="color:#38bdf8; display:flex; align-items:center; gap:0.35rem;">' +
-                    '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="M6 11l6 6 6-6"/><path d="M19 21H5"/></svg> Request Payload (' + safeClientIp + ')' +
+                    '<svg class="icon icon-sm" style="width:12px; height:12px;" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="M6 11l6 6 6-6"/><path d="M19 21H5"/></svg> Request Payload (Client: ' + safeClientIp + (safeRealIp && safeRealIp !== safeClientIp ? ' &bull; Real: ' + safeRealIp : '') + ')' +
                     (isReqEnc ? ' <span data-enc-badge="' + safeId + '_req" class="badge badge-encrypted">🔒 Encrypted</span>' : '') +
                   '</span>' +
                   '<div style="display:flex; gap:4px;">' +

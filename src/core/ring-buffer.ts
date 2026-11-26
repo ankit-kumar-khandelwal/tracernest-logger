@@ -228,11 +228,12 @@ export class RingBuffer {
         continue;
       }
 
-      // Search query (message, url, client IP, or json metadata)
+      // Search query (message, url, client IP, real IP, or json metadata)
       if (regex) {
         const matchesMsg = SafeRegex.test(regex, entry.message);
         const matchesUrl = entry.metadata?.http?.url ? SafeRegex.test(regex, entry.metadata.http.url) : false;
-        const matchesIp = entry.metadata?.http?.clientIp ? SafeRegex.test(regex, entry.metadata.http.clientIp) : false;
+        const matchesIp = (entry.metadata?.http?.clientIp ? SafeRegex.test(regex, entry.metadata.http.clientIp) : false) ||
+          (entry.metadata?.http?.realIp ? SafeRegex.test(regex, entry.metadata.http.realIp) : false);
         const matchesMeta = entry.metadata ? SafeRegex.test(regex, JSON.stringify(entry.metadata)) : false;
         if (!matchesMsg && !matchesUrl && !matchesIp && !matchesMeta) {
           continue;
@@ -240,7 +241,8 @@ export class RingBuffer {
       } else if (searchLower) {
         const matchesMsg = entry.message.toLowerCase().includes(searchLower);
         const matchesUrl = entry.metadata?.http?.url ? entry.metadata.http.url.toLowerCase().includes(searchLower) : false;
-        const matchesIp = entry.metadata?.http?.clientIp ? entry.metadata.http.clientIp.toLowerCase().includes(searchLower) : false;
+        const matchesIp = (entry.metadata?.http?.clientIp ? entry.metadata.http.clientIp.toLowerCase().includes(searchLower) : false) ||
+          (entry.metadata?.http?.realIp ? entry.metadata.http.realIp.toLowerCase().includes(searchLower) : false);
         const matchesMeta = entry.metadata ? JSON.stringify(entry.metadata).toLowerCase().includes(searchLower) : false;
         if (!matchesMsg && !matchesUrl && !matchesIp && !matchesMeta) {
           continue;

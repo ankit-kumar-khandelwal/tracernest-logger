@@ -192,3 +192,74 @@ export function extractClientIp(req: IncomingMessage, trustProxy?: TrustProxyOpt
 
   return socketIp;
 }
+
+/**
+ * Extract Real Client IP from reverse proxy and gateway headers.
+ * Checks standard forward headers:
+ * 1. X-Real-IP (Nginx, Kong, Traefik)
+ * 2. CF-Connecting-IP (Cloudflare)
+ * 3. True-Client-IP (Akamai, Cloudflare Enterprise)
+ * 4. Fastly-Client-IP (Fastly)
+ * 5. X-Forwarded-For (leftmost client IP)
+ * 6. X-Client-IP / X-Cluster-Client-IP
+ * 7. RFC 7239 Forwarded (for=...)
+ * Falls back to direct socket peer IP.
+ */
+export function extractRealIp(req: IncomingMessage): string {
+  const headers = req?.headers;
+  if (!headers) {
+    return cleanIp(req?.socket?.remoteAddress || (req?.connection as any)?.remoteAddress || '127.0.0.1');
+  }
+
+  // 1. Direct X-Real-IP
+  const realIp = headers['x-real-ip'];
+  if (typeof realIp === 'string' && realIp.trim()) {
+    return cleanIp(realIp);
+  }
+
+  // 2. Cloudflare Connecting IP
+  const cfIp = headers['cf-connecting-ip'];
+  if (typeof cfIp === 'string' && cfIp.trim()) {
+    return cleanIp(cfIp);
+  }
+
+  // 3. Akamai / Cloudflare Enterprise True-Client-IP
+  const trueClientIp = headers['true-client-ip'];
+  if (typeof trueClientIp === 'string' && trueClientIp.trim()) {
+    return cleanIp(trueClientIp);
+  }
+
+  // 4. Fastly Client IP
+  const fastlyIp = headers['fastly-client-ip'];
+  if (typeof fastlyIp === 'string' && fastlyIp.trim()) {
+    return cleanIp(fastlyIp);
+  }
+
+  // 5. Standard X-Forwarded-For (client is leftmost)
+  const forwardedFor = headers['x-forwarded-for'];
+  if (forwardedFor) {
+    const raw = typeof forwardedFor === 'string' ? forwardedFor : forwardedFor[0];
+    if (raw && raw.trim()) {
+      const first = raw.split(',')[0].trim();
+      if (first) return cleanIp(first);
+    }
+  }
+
+  // 6. X-Client-IP / X-Cluster-Client-IP
+  const clientIp = headers['x-client-ip'] || headers['x-cluster-client-ip'];
+  if (typeof clientIp === 'string' && clientIp.trim()) {
+    return cleanIp(clientIp);
+  }
+
+  // 7. RFC 7239 Forwarded header
+  const forwarded = headers['forwarded'];
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    const match = /for="?([^";,\s]+)"?/i.exec(forwarded);
+    if (match && match[1]) {
+      return cleanIp(match[1]);
+    }
+  }
+
+  // 8. Direct socket peer fallback
+  return cleanIp(req?.socket?.remoteAddress || (req?.connection as any)?.remoteAddress || '127.0.0.1');
+}

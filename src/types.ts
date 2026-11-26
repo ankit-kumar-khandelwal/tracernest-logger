@@ -9,6 +9,7 @@ export interface HttpLogMetadata {
   statusCode: number;
   durationMs: number;
   clientIp: string;
+  realIp?: string;
   headers?: Record<string, string>;
   requestBody?: any;
   responseBody?: any;
@@ -72,6 +73,7 @@ export interface AuditLogEntry {
   action: string;
   details?: Record<string, unknown>;
   ip?: string;
+  realIp?: string;
 }
 
 export interface LogQueryOptions {

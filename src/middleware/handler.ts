@@ -13,7 +13,7 @@ import { AuditLogger } from '../core/audit';
 import { AlertDispatcher } from '../alerts/alert-dispatcher';
 import { TTLManager } from '../core/ttl-manager';
 import { HttpLogger } from './http-logger';
-import { extractClientIp } from '../security/client-ip';
+import { extractClientIp, extractRealIp } from '../security/client-ip';
 import { FastCrypto } from '../security/fast-crypto';
 import { getDashboardHtml } from '../ui/dashboard-html';
 
@@ -1308,6 +1308,10 @@ export class HttpHandler {
 
   private getClientIp(req: IncomingMessage): string {
     return extractClientIp(req, this.config.trustProxy);
+  }
+
+  private getRealIp(req: IncomingMessage): string {
+    return extractRealIp(req);
   }
 
   private sendJson(res: ServerResponse, statusCode: number, data: any): void {
