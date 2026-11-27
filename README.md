@@ -5,6 +5,7 @@
 ### Stop guessing what's happening inside your backend. See it with TracerNest.
 
 **Self-hosted observability and operations dashboard for Node.js & Laravel 13 applications.**
+**Self-hosted observability and operations dashboard for Node.js & Laravel 13 applications.**
 
 *Centralized visibility into application logs, HTTP requests and responses, application health, operational diagnostics, and critical events through a configurable dashboard integrated directly into your existing backend.*
 

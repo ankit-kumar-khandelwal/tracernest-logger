@@ -26,6 +26,10 @@ class TracerNestMiddleware
             return $next($request);
         }
 
+        if (!config('tracernest.enabled', true)) {
+            return $next($request);
+        }
+
         $startTime = microtime(true);
 
         $response = $next($request);
