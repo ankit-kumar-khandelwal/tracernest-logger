@@ -56,6 +56,9 @@ $registerRoutes = function () {
     Route::get('/setup', [TracerNestController::class, 'dashboard']);
     Route::get('/decryption', [TracerNestController::class, 'dashboard']);
     Route::get('/logs', [TracerNestController::class, 'dashboard']);
+    Route::get('/apis', [TracerNestController::class, 'dashboard']);
+    Route::get('/exclusions', [TracerNestController::class, 'dashboard']);
+    Route::get('/ttl', [TracerNestController::class, 'dashboard']);
     Route::get('/settings', [TracerNestController::class, 'dashboard']);
     Route::get('/alerts', [TracerNestController::class, 'dashboard']);
     Route::get('/audit', [TracerNestController::class, 'dashboard']);
@@ -64,6 +67,8 @@ $registerRoutes = function () {
     // 2. Health & System Diagnostics
     Route::get('/health', [TracerNestController::class, 'health']);
     Route::get('/api/health', [TracerNestController::class, 'health']);
+    Route::get('/status', [TracerNestController::class, 'authStatus']);
+    Route::get('/api/status', [TracerNestController::class, 'authStatus']);
     Route::get('/metrics', [TracerNestController::class, 'metrics']);
     Route::get('/api/metrics', [TracerNestController::class, 'metrics']);
 
@@ -86,6 +91,7 @@ $registerRoutes = function () {
     Route::post('/api/logs/decrypt-payload', [TracerNestController::class, 'decryptPayload']);
     Route::post('/api/logs/ingest', [TracerNestController::class, 'ingest']);
     Route::post('/api/ingest', [TracerNestController::class, 'ingest']);
+    Route::match(['get', 'post'], '/api/orders', [TracerNestController::class, 'simulateOrderApi']);
 
     // 5. Data Retention & TTL Policies
     Route::get('/api/ttl', [TracerNestController::class, 'listTtlRules']);
@@ -123,6 +129,9 @@ if ($pathPrefix !== '') {
     if (config('tracernest.expose_root_api', true)) {
         Route::post('/api/logs/ingest', [TracerNestController::class, 'ingest']);
         Route::post('/api/ingest', [TracerNestController::class, 'ingest']);
+        Route::match(['get', 'post'], '/api/orders', [TracerNestController::class, 'simulateOrderApi']);
+        Route::get('/api/health', [TracerNestController::class, 'health']);
+        Route::get('/api/metrics', [TracerNestController::class, 'metrics']);
     }
 } else {
     Route::group([], $registerRoutes);

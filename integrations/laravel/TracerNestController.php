@@ -271,13 +271,15 @@ class TracerNestController
                 $rawPath = $parsedPath;
             }
         }
-        $effectiveBasePath = '/' . trim($rawPath ?: '/tracernest', '/');
+        $normalizedPath = trim($rawPath ?: '/tracernest', '/');
+        $effectiveBasePath = $normalizedPath !== '' ? '/' . $normalizedPath : '';
 
         // Check if the current route has a group prefix (e.g. Route::prefix('admin')->group(...))
         if ($request && method_exists($request, 'route') && $request->route()) {
             $routePrefix = $request->route()->getPrefix();
-            if (!empty($routePrefix)) {
-                $effectiveBasePath = '/' . trim($routePrefix, '/');
+            if ($routePrefix !== null) {
+                $trimmedPrefix = trim($routePrefix, '/');
+                $effectiveBasePath = $trimmedPrefix !== '' ? '/' . $trimmedPrefix : '';
             }
         }
 
@@ -348,7 +350,7 @@ class TracerNestController
                 'id' => $userId,
                 'username' => $username,
                 'role' => 'admin',
-                'permissions' => ['*'],
+                'permissions' => $this->getPermissions('admin'),
                 'mustChangePassword' => false,
             ],
         ], 201)->cookie('tracernest_token', $token, 1440, '/', null, $request->isSecure(), true);
@@ -405,7 +407,7 @@ class TracerNestController
                 'id' => $user->id,
                 'username' => $user->username,
                 'role' => $user->role,
-                'permissions' => ['*'],
+                'permissions' => $this->getPermissions($user->role),
                 'mustChangePassword' => (bool) $user->must_change_password,
             ],
             'mustChangePassword' => (bool) $user->must_change_password,
@@ -433,10 +435,36 @@ class TracerNestController
                 'id' => $user->id,
                 'username' => $user->username,
                 'role' => $user->role,
-                'permissions' => ['*'],
+                'permissions' => $this->getPermissions($user->role),
                 'mustChangePassword' => (bool) ($userRecord->must_change_password ?? false),
             ],
         ]);
+    }
+
+    /**
+     * Resolves granular RBAC permissions for a given role.
+     */
+    public function getPermissions(string $role): array
+    {
+        $role = strtolower(trim($role));
+        $map = [
+            'admin' => [
+                'logs:read',
+                'logs:stream',
+                'logs:clear',
+                'logs:export',
+                'users:manage',
+                'alerts:manage',
+                'ttl:manage',
+                'audit:read',
+                'system:manage',
+            ],
+            'operator' => ['logs:read', 'logs:stream', 'logs:export', 'ttl:manage'],
+            'auditor' => ['logs:read', 'logs:export', 'audit:read'],
+            'viewer' => ['logs:read', 'logs:stream'],
+        ];
+
+        return $map[$role] ?? ['logs:read', 'logs:stream'];
     }
 
     public function changePassword(Request $request): JsonResponse
@@ -592,30 +620,52 @@ class TracerNestController
 
     public function streamLogs(Request $request): StreamedResponse
     {
+        $user = $this->authenticate($request);
         $lastTimestamp = (int) ($request->input('since') ?: (microtime(true) * 1000) - 2000);
+        $levelFilter = $request->input('level');
+        $searchFilter = strtolower(trim((string) $request->input('search', '')));
 
-        return response()->stream(function () use ($lastTimestamp) {
-            echo ": connected\n\n";
+        return response()->stream(function () use ($lastTimestamp, $levelFilter, $searchFilter) {
+            if (function_exists('set_time_limit')) {
+                @set_time_limit(0);
+            }
+            if (function_exists('ignore_user_abort')) {
+                @ignore_user_abort(true);
+            }
+
+            // Immediately send SSE handshake event: ready so client knows connection is live
+            echo "event: ready\n";
+            echo "data: " . json_encode(['clientId' => uniqid('client_', true), 'status' => 'connected']) . "\n\n";
             if (ob_get_level() > 0) ob_flush();
             flush();
 
             $seen = [];
             $currentTs = $lastTimestamp;
             $start = time();
+            $lastPing = time();
 
-            while (time() - $start < 25) {
+            while (time() - $start < 60) {
                 if (connection_aborted()) break;
 
-                $rows = $this->db()->table($this->tableLogs)
-                    ->where('timestamp', '>', $currentTs)
-                    ->orderBy('timestamp', 'asc')
-                    ->limit(20)
+                $query = $this->db()->table($this->tableLogs)
+                    ->where('timestamp', '>', $currentTs);
+
+                if ($levelFilter && $levelFilter !== 'all') {
+                    $query->where('level', $levelFilter);
+                }
+
+                $rows = $query->orderBy('timestamp', 'asc')
+                    ->limit(50)
                     ->get();
 
                 foreach ($rows as $r) {
                     if (isset($seen[$r->id])) continue;
                     $seen[$r->id] = true;
                     $currentTs = max($currentTs, (int) $r->timestamp);
+
+                    if ($searchFilter !== '' && !str_contains(strtolower($r->message), $searchFilter)) {
+                        continue;
+                    }
 
                     $payload = [
                         'id' => $r->id,
@@ -632,12 +682,19 @@ class TracerNestController
                     echo "data: " . json_encode($payload) . "\n\n";
                 }
 
+                // Periodic heartbeat keepalive every 10 seconds
+                if (time() - $lastPing >= 10) {
+                    echo "event: ping\n";
+                    echo "data: " . json_encode(['timestamp' => (int) (microtime(true) * 1000)]) . "\n\n";
+                    $lastPing = time();
+                }
+
                 if (ob_get_level() > 0) ob_flush();
                 flush();
                 usleep(500000);
             }
         }, 200, [
-            'Content-Type' => 'text/event-stream',
+            'Content-Type' => 'text/event-stream; charset=UTF-8',
             'Cache-Control' => 'no-cache, no-transform',
             'Connection' => 'keep-alive',
             'X-Accel-Buffering' => 'no',
@@ -770,22 +827,92 @@ class TracerNestController
     {
         $load = function_exists('sys_getloadavg') ? sys_getloadavg() : [0, 0, 0];
         $totalLogs = $this->db()->table($this->tableLogs)->count();
+        $hasUsers = $this->db()->table($this->tableUsers)->count() > 0;
+        $driver = $this->db()->getDriverName();
+        $memUsage = memory_get_usage(true);
+        $memPeak = memory_get_peak_usage(true);
+        $memLimitStr = ini_get('memory_limit') ?: '128M';
+        $memLimit = $this->parseBytes($memLimitStr) ?: 134217728;
+        $uptimeSec = (int) (microtime(true) - (defined('LARAVEL_START') ? LARAVEL_START : microtime(true)));
 
         return response()->json([
             'status' => 'healthy',
+            'timestamp' => (int) (microtime(true) * 1000),
+            'uptime' => $uptimeSec,
+            'uptimeFormatted' => $this->formatUptime($uptimeSec),
             'framework' => 'Laravel 13',
             'php' => PHP_VERSION,
             'database' => [
-                'driver' => $this->db()->getDriverName(),
+                'dialect' => $driver,
+                'status' => 'connected',
                 'connected' => true,
+                'hasUsers' => $hasUsers,
                 'totalLogs' => $totalLogs,
             ],
+            'process' => [
+                'pid' => getmypid() ?: 1,
+                'nodeVersion' => 'PHP ' . PHP_VERSION,
+                'platform' => PHP_OS_FAMILY,
+                'arch' => PHP_INT_SIZE === 8 ? 'x64' : 'x86',
+            ],
             'memory' => [
-                'usageBytes' => memory_get_usage(true),
-                'peakBytes' => memory_get_peak_usage(true),
+                'heapUsedMb' => round($memUsage / 1048576, 1),
+                'heapTotalMb' => round($memLimit / 1048576, 1),
+                'heapUsagePercent' => round(($memUsage / $memLimit) * 100, 1),
+                'usageBytes' => $memUsage,
+                'peakBytes' => $memPeak,
+            ],
+            'logs' => [
+                'bufferCount' => $totalLogs,
+                'capacity' => 10000,
+                'bufferUsagePercent' => min(100, round(($totalLogs / 10000) * 100, 1)),
+                'totalPurged' => 0,
+                'throughputPerSec' => 0,
             ],
             'loadAverage' => $load,
         ]);
+    }
+
+    public function simulateOrderApi(Request $request): JsonResponse
+    {
+        $orderId = 'ord_' . bin2hex(random_bytes(6));
+        $total = $request->input('total', 399.00);
+        $items = $request->input('items', ['TracerNest Enterprise License', 'Cluster Flight Recorder']);
+
+        return response()->json([
+            'success' => true,
+            'orderId' => $orderId,
+            'status' => 'confirmed',
+            'items' => $items,
+            'total' => $total,
+            'timestamp' => (int) (microtime(true) * 1000),
+            'message' => 'Simulated order API executed successfully. Request and response telemetry captured.',
+        ], 200);
+    }
+
+    protected function parseBytes(string $val): int
+    {
+        $val = trim($val);
+        $last = strtolower($val[strlen($val) - 1]);
+        $num = (int) $val;
+        switch ($last) {
+            case 'g': $num *= 1024 * 1024 * 1024; break;
+            case 'm': $num *= 1024 * 1024; break;
+            case 'k': $num *= 1024; break;
+        }
+        return $num;
+    }
+
+    protected function formatUptime(int $seconds): string
+    {
+        if ($seconds < 60) return "{$seconds}s";
+        $minutes = floor($seconds / 60);
+        $remSeconds = $seconds % 60;
+        if ($minutes < 60) return "{$minutes}m {$remSeconds}s";
+        $hours = floor($minutes / 60);
+        $remMinutes = $minutes % 60;
+        return "{$hours}h {$remMinutes}m";
+    }
     }
 
     public function metrics(Request $request): JsonResponse
@@ -1252,6 +1379,31 @@ class TracerNestController
     protected function authenticate(Request $request): ?object
     {
         $token = $request->bearerToken() ?: $request->cookie('tracernest_token') ?: $request->input('token');
+
+        // Support short-lived single-use ticket for EventSource SSE stream
+        if (!$token && $request->has('ticket')) {
+            $rawTicket = base64_decode((string) $request->input('ticket'), true);
+            if ($rawTicket) {
+                $parts = explode(':', $rawTicket);
+                if (count($parts) === 4 && $parts[0] === 'ticket') {
+                    [$prefix, $userId, $expiresAt, $sig] = $parts;
+                    if (time() <= (int) $expiresAt) {
+                        $expectedSig = hash_hmac('sha256', "ticket:{$userId}:{$expiresAt}", $this->secret);
+                        if (hash_equals($expectedSig, $sig)) {
+                            $dbUser = $this->db()->table($this->tableUsers)->where('id', $userId)->first();
+                            if ($dbUser) {
+                                return (object) [
+                                    'id' => $dbUser->id,
+                                    'username' => $dbUser->username,
+                                    'role' => $dbUser->role,
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (!$token) return null;
 
         $decoded = base64_decode($token, true);

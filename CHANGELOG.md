@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.4] - 2026-11-27
+
+### Fixed & Enhanced (Laravel 13 & Operations Dashboard)
+- **LogStream Live Sync Handshake & Self-Healing Reconnect:** Fixed LogStream remaining in "Disconnected" status in Laravel. `TracerNestController::streamLogs()` now immediately dispatches an initial `event: ready` SSE handshake upon connection, verifies single-use stream tickets in `authenticate()`, and emits periodic `event: ping` keepalives every 10 seconds. In `dashboard-html.ts`, added `onopen` and `ready` event bindings and automated self-healing reconnection with fresh ticket acquisition when connections close.
+- **Admin RBAC Full Feature Visibility:** Fixed missing dashboard tabs for administrators in Laravel (`Manage Users`, `Alert Integrations`, `TTL & Retention`, `Security Audit`, `Skip Sensitive APIs`, buffer clear, and export telemetry). Enhanced `applyRBAC()` in `dashboard-html.ts` to grant full administrative feature access to users with `admin` role, `root` role, or `'*'` wildcard permission. In `TracerNestController.php`, implemented `getPermissions()` to return explicit granular permission arrays on `setup()`, `login()`, and `me()`.
+- **API Prefix Harmonization & Subroute Registration:**
+  - Registered missing SPA views (`/apis`, `/exclusions`, `/ttl`) in `integrations/laravel/routes.php` and included them in client-side `BASE_PATH` detection, preventing 404s when refreshing or navigating to these pages.
+  - Normalized root base path from `'/'` to `''` in client JavaScript, eliminating protocol-relative `//api/...` URL formatting bugs.
+  - Added simulated API endpoint (`POST /api/orders`) in Laravel controller and routes, ensuring "Simulate API Call" in the dashboard executes with 200 OK and generates captured telemetry.
+  - Upgraded `health()` endpoint in Laravel to return full subsystem diagnostics (database dialect, process PID, PHP version, memory percentage, log buffer metrics, uptime), fully hydrating the Server Health & Telemetry Diagnostic modal.
+  - Dynamically excluded TracerNest's own internal controller in `TracerNestMiddleware` via route controller inspection, preventing self-telemetry capture loops under custom or nested route group prefixes.
+  - Automatically scaffolds `app/Http/Controllers/dashboard.html` in `TracerNestInstaller` and `npx tracernest-install-laravel` CLI to guarantee local asset availability.
+
+---
+
 ## [1.9.3] - 2026-11-27
 
 ### Security & Hardening

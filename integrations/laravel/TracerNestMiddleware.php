@@ -68,7 +68,16 @@ class TracerNestMiddleware
         }
         $tracernestPrefix = '/' . trim($rawPath ?: '/tracernest', '/');
 
-        // Exclude TracerNest's own dashboard and API endpoints from telemetry capture
+        // Exclude TracerNest's own controller and API endpoints from telemetry capture
+        $route = $request->route();
+        if ($route) {
+            $action = $route->getAction();
+            $controller = $action['controller'] ?? '';
+            if (is_string($controller) && str_contains($controller, 'TracerNestController')) {
+                return;
+            }
+        }
+
         if ($url === $tracernestPrefix || str_starts_with($url, $tracernestPrefix . '/')) {
             return;
         }

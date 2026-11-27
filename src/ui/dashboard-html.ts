@@ -3133,23 +3133,38 @@ ${brandTitleHtml}
     // or browser URL to seamlessly support custom prefixes, Nginx reverse proxies, API gateways, and subpaths.
     const BASE_PATH = (function() {
       if (typeof window !== 'undefined' && window.__TRACERNEST_BASE_PATH__) {
-        return window.__TRACERNEST_BASE_PATH__;
+        let bp = window.__TRACERNEST_BASE_PATH__;
+        if (bp === '/') return '';
+        if (bp.endsWith('/') && bp.length > 1) bp = bp.slice(0, -1);
+        return bp;
       }
       try {
         let p = (typeof window !== 'undefined' && window.location && window.location.pathname) ? window.location.pathname : '';
         while (p.endsWith('/') && p.length > 1) {
           p = p.slice(0, -1);
         }
-        const subPages = ['/login', '/setup', '/decryption', '/logs', '/settings', '/alerts', '/audit', '/users', '/metrics', '/health'];
+        const subPages = [
+          '/login', '/setup', '/decryption', '/logs', '/settings',
+          '/alerts', '/audit', '/users', '/metrics', '/health',
+          '/apis', '/exclusions', '/ttl', '/status'
+        ];
         for (let i = 0; i < subPages.length; i++) {
           const page = subPages[i];
           if (p.endsWith(page)) {
-            return p.slice(0, -page.length) || '/';
+            let res = p.slice(0, -page.length);
+            if (res === '/') return '';
+            return res;
           }
         }
-        if (p) return p;
+        if (p) {
+          if (p === '/') return '';
+          return p;
+        }
       } catch (e) {}
-      return ${JSON.stringify(basePath).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')};
+      let defaultBp = ${JSON.stringify(basePath).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')};
+      if (defaultBp === '/') return '';
+      if (defaultBp.endsWith('/') && defaultBp.length > 1) defaultBp = defaultBp.slice(0, -1);
+      return defaultBp;
     })();
     let token = sessionStorage.getItem('logvault_token') || '';
     let currentUser = null;
@@ -3283,17 +3298,20 @@ ${brandTitleHtml}
 
     function applyRBAC() {
       if (!currentUser) return;
+      const role = (currentUser.role || '').toLowerCase();
       const perms = currentUser.permissions || [];
+      const isAdmin = role === 'admin' || role === 'root' || perms.includes('*');
+      const hasPerm = (p) => isAdmin || perms.includes(p);
 
-      document.getElementById('navUsers').style.display = perms.includes('users:manage') ? 'flex' : 'none';
+      document.getElementById('navUsers').style.display = hasPerm('users:manage') ? 'flex' : 'none';
       if (document.getElementById('navExclusions')) {
-        document.getElementById('navExclusions').style.display = (perms.includes('logs:read') || perms.includes('users:manage')) ? 'flex' : 'none';
+        document.getElementById('navExclusions').style.display = (hasPerm('logs:read') || hasPerm('users:manage')) ? 'flex' : 'none';
       }
-      document.getElementById('navAlerts').style.display = perms.includes('alerts:manage') ? 'flex' : 'none';
-      document.getElementById('navTtl').style.display = perms.includes('ttl:manage') || perms.includes('logs:read') ? 'flex' : 'none';
-      document.getElementById('navAudit').style.display = perms.includes('audit:read') ? 'flex' : 'none';
-      document.getElementById('btnClear').style.display = perms.includes('logs:clear') ? 'inline-flex' : 'none';
-      document.getElementById('btnExport').style.display = perms.includes('logs:export') ? 'inline-flex' : 'none';
+      document.getElementById('navAlerts').style.display = hasPerm('alerts:manage') ? 'flex' : 'none';
+      document.getElementById('navTtl').style.display = (hasPerm('ttl:manage') || hasPerm('logs:read')) ? 'flex' : 'none';
+      document.getElementById('navAudit').style.display = hasPerm('audit:read') ? 'flex' : 'none';
+      document.getElementById('btnClear').style.display = hasPerm('logs:clear') ? 'inline-flex' : 'none';
+      document.getElementById('btnExport').style.display = hasPerm('logs:export') ? 'inline-flex' : 'none';
     }
 
     function switchView(viewName) {
@@ -3327,7 +3345,9 @@ ${brandTitleHtml}
 
     // SSE Log Streaming (SEC-01: Uses short-lived single-use ticket or HttpOnly cookie, never long-lived bearer tokens in URL)
     async function startSSEStream() {
-      if (eventSource) eventSource.close();
+      if (eventSource) {
+        try { eventSource.close(); } catch {}
+      }
 
       const syncBadge = document.getElementById('syncBadge');
       const syncText = document.getElementById('syncText');
@@ -3338,7 +3358,7 @@ ${brandTitleHtml}
       try {
         const ticketRes = await fetch(\`\${BASE_PATH}/api/logs/stream/ticket\`, {
           method: 'POST',
-          headers: { 'Authorization': \`Bearer \${token}\` }
+          headers: getAuthHeaders()
         });
         if (ticketRes.ok) {
           const ticketData = await ticketRes.json();
@@ -3348,25 +3368,47 @@ ${brandTitleHtml}
         }
       } catch {}
 
-      eventSource = new EventSource(streamUrl);
+      try {
+        eventSource = new EventSource(streamUrl);
 
-      eventSource.addEventListener('ready', () => {
-        if (syncBadge) syncBadge.className = 'sync-indicator synced';
-        if (syncText) syncText.textContent = 'Live Sync';
-      });
+        eventSource.onopen = () => {
+          if (syncBadge) syncBadge.className = 'sync-indicator synced';
+          if (syncText) syncText.textContent = 'Live Sync';
+        };
 
-      eventSource.addEventListener('log', (e) => {
-        if (isPaused) return;
-        try {
-          const entry = JSON.parse(e.data);
-          appendLog(entry);
-        } catch {}
-      });
+        eventSource.addEventListener('ready', () => {
+          if (syncBadge) syncBadge.className = 'sync-indicator synced';
+          if (syncText) syncText.textContent = 'Live Sync';
+        });
 
-      eventSource.onerror = () => {
+        eventSource.addEventListener('log', (e) => {
+          if (isPaused) return;
+          try {
+            const entry = JSON.parse(e.data);
+            appendLog(entry);
+          } catch {}
+        });
+
+        eventSource.addEventListener('ping', () => {
+          if (syncBadge && !syncBadge.classList.contains('synced')) {
+            syncBadge.className = 'sync-indicator synced';
+            syncText.textContent = 'Live Sync';
+          }
+        });
+
+        eventSource.onerror = () => {
+          if (syncBadge) syncBadge.className = 'sync-indicator disconnected';
+          if (syncText) syncText.textContent = 'Disconnected';
+          if (!isPaused && eventSource && eventSource.readyState === EventSource.CLOSED) {
+            setTimeout(() => {
+              if (!isPaused) startSSEStream();
+            }, 3000);
+          }
+        };
+      } catch (err) {
         if (syncBadge) syncBadge.className = 'sync-indicator disconnected';
         if (syncText) syncText.textContent = 'Disconnected';
-      };
+      }
     }
 
     function escapeRegex(str) {
@@ -4812,7 +4854,7 @@ ${brandTitleHtml}
 
     async function triggerSimulatedApi() {
       try {
-        const res = await fetch('/api/orders', {
+        const res = await fetch(\`\${BASE_PATH}/api/orders\`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

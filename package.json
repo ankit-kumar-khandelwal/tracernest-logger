@@ -1,6 +1,6 @@
 {
   "name": "tracernest-logger",
-  "version": "1.9.3",
+  "version": "1.9.4",
   "description": "Zero-dependency, high-security Node.js application telemetry logger, live trace monitor & ops dashboard with encrypted SQL storage, RBAC, HTTP interception, real client IP extraction, and graceful shutdown",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -40,7 +40,8 @@
     "url": "https://github.com/ankit-kumar-khandelwal/tracernest-logger/issues"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run build:dashboard",
+    "build:dashboard": "node -e \"const { getDashboardHtml } = require('./dist/ui/dashboard-html'); require('fs').writeFileSync('integrations/laravel/dashboard.html', getDashboardHtml('/tracernest'));\"",
     "prepublishOnly": "npm run build && npm test",
     "watch": "tsc -w",
     "demo": "tsc && node dist/demo.js",

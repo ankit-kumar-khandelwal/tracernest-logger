@@ -33,6 +33,7 @@ class TracerNestInstaller
         $results = [
             'config' => self::createConfigFile($force),
             'controller' => self::createControllerFile($force),
+            'dashboard' => self::createDashboardFile($force),
             'middleware' => self::createMiddlewareFile($force),
             'monolog' => self::createMonologHandlerFile($force),
             'kernel' => self::defineInKernel(),
@@ -93,6 +94,20 @@ class TracerNestInstaller
         $source = __DIR__ . '/TracerNestController.php';
 
         return self::copyIfMissing($source, $target, $force, 'app/Http/Controllers/TracerNestController.php');
+    }
+
+    /**
+     * Automatically creates app/Http/Controllers/dashboard.html if not present.
+     */
+    public static function createDashboardFile(bool $force = false): string
+    {
+        $target = function_exists('app_path') 
+            ? app_path('Http/Controllers/dashboard.html') 
+            : self::getBasePath('app/Http/Controllers/dashboard.html');
+
+        $source = __DIR__ . '/dashboard.html';
+
+        return self::copyIfMissing($source, $target, $force, 'app/Http/Controllers/dashboard.html');
     }
 
     /**

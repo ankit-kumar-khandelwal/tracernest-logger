@@ -85,11 +85,13 @@ export function runLaravelInstaller(cliArgs: string[] = process.argv.slice(2)): 
   console.log('Scaffolding TracerNest components:');
   const configRes = copyFile('tracernest.php', 'config/tracernest.php', 'config');
   const ctrlRes = copyFile('TracerNestController.php', 'app/Http/Controllers/TracerNestController.php', 'controller');
+  const dashRes = copyFile('dashboard.html', 'app/Http/Controllers/dashboard.html', 'dashboard');
   const midRes = copyFile('TracerNestMiddleware.php', 'app/Http/Middleware/TracerNestMiddleware.php', 'middleware');
   const monoRes = copyFile('TracerNestMonologHandler.php', 'app/Logging/TracerNestMonologHandler.php', 'monolog');
 
   console.log(`  • Config File        : ${configRes}`);
   console.log(`  • Controller File    : ${ctrlRes}`);
+  console.log(`  • Dashboard HTML     : ${dashRes}`);
   console.log(`  • Middleware File    : ${midRes}`);
   console.log(`  • Monolog Handler    : ${monoRes}`);
 

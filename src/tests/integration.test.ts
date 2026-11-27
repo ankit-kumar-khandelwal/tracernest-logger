@@ -2959,6 +2959,7 @@ Route::get('/', function () {
     // 3. Verify all required files were created
     assert.ok(existsSync(join(mockLaravelDir, 'config', 'tracernest.php')), 'config/tracernest.php must be created');
     assert.ok(existsSync(join(mockLaravelDir, 'app', 'Http', 'Controllers', 'TracerNestController.php')), 'TracerNestController.php must be created');
+    assert.ok(existsSync(join(mockLaravelDir, 'app', 'Http', 'Controllers', 'dashboard.html')), 'dashboard.html must be created');
     assert.ok(existsSync(join(mockLaravelDir, 'app', 'Http', 'Middleware', 'TracerNestMiddleware.php')), 'TracerNestMiddleware.php must be created');
     assert.ok(existsSync(join(mockLaravelDir, 'app', 'Logging', 'TracerNestMonologHandler.php')), 'TracerNestMonologHandler.php must be created');
 
@@ -2980,6 +2981,42 @@ Route::get('/', function () {
   } finally {
     if (existsSync(mockLaravelDir)) rmSync(mockLaravelDir, { recursive: true, force: true });
   }
+});
+
+test('Integration: Laravel Dashboard Full Admin RBAC, LogStream Live Sync Handshake & API Prefix Harmonization', async () => {
+  const dashHtml = getDashboardHtml('/tracernest');
+
+  // 1. Full RBAC display for Admin: verifies that admin role or '*' permission shows all dashboard tabs
+  assert.ok(dashHtml.includes("isAdmin = role === 'admin' || role === 'root' || perms.includes('*')"), 'Dashboard must recognize admin role and wildcard permissions for full feature access');
+  assert.ok(dashHtml.includes("hasPerm('users:manage')"), 'Users tab must be conditioned on hasPerm');
+  assert.ok(dashHtml.includes("hasPerm('alerts:manage')"), 'Alerts tab must be conditioned on hasPerm');
+  assert.ok(dashHtml.includes("hasPerm('audit:read')"), 'Audit tab must be conditioned on hasPerm');
+
+  // 2. LogStream Live Sync: verifies EventSource onopen, ready handshake, and ping listeners
+  assert.ok(dashHtml.includes("eventSource.onopen ="), 'EventSource must handle onopen for instant live sync');
+  assert.ok(dashHtml.includes("eventSource.addEventListener('ready'"), 'EventSource must handle ready event handshake');
+  assert.ok(dashHtml.includes("eventSource.addEventListener('ping'"), 'EventSource must handle ping keepalive');
+
+  // 3. API prefix harmonization: verifies simulate API call and subroutes are prefixed
+  assert.ok(dashHtml.includes("fetch(`${BASE_PATH}/api/orders`"), 'Simulate API call must be properly prefixed with BASE_PATH');
+  assert.ok(dashHtml.includes("'/apis'"), 'subPages in BASE_PATH detector must include /apis');
+  assert.ok(dashHtml.includes("'/exclusions'"), 'subPages in BASE_PATH detector must include /exclusions');
+  assert.ok(dashHtml.includes("'/ttl'"), 'subPages in BASE_PATH detector must include /ttl');
+
+  // 4. Verify Laravel routes.php mounts all subpages and diagnostic endpoints
+  const routesPhp = readFileSync(join(__dirname, '../../integrations/laravel/routes.php'), 'utf8');
+  assert.ok(routesPhp.includes("Route::get('/apis'"), 'Laravel routes must mount /apis view');
+  assert.ok(routesPhp.includes("Route::get('/exclusions'"), 'Laravel routes must mount /exclusions view');
+  assert.ok(routesPhp.includes("Route::get('/ttl'"), 'Laravel routes must mount /ttl view');
+  assert.ok(routesPhp.includes("Route::match(['get', 'post'], '/api/orders'"), 'Laravel routes must mount /api/orders');
+  assert.ok(routesPhp.includes("Route::get('/api/status'"), 'Laravel routes must mount /api/status');
+
+  // 5. Verify TracerNestController.php implements getPermissions, simulateOrderApi, and ready SSE event
+  const controllerPhp = readFileSync(join(__dirname, '../../integrations/laravel/TracerNestController.php'), 'utf8');
+  assert.ok(controllerPhp.includes('function getPermissions('), 'Controller must implement getPermissions helper');
+  assert.ok(controllerPhp.includes('function simulateOrderApi('), 'Controller must implement simulateOrderApi endpoint');
+  assert.ok(controllerPhp.includes('event: ready'), 'Controller streamLogs must emit ready handshake event');
+  assert.ok(controllerPhp.includes('ticket'), 'Controller authenticate must support stream tickets');
 });
 
 test('Security: Database persistence & migration hardening', async () => {
