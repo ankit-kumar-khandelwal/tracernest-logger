@@ -4,9 +4,11 @@ import { existsSync, unlinkSync, rmSync, readdirSync, readFileSync } from 'node:
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { EventEmitter } from 'node:events';
 import { Socket } from 'node:net';
+import { join } from 'node:path';
 import vm from 'node:vm';
 import { TracerNestLogger, TraceNest, LogVault, DEFAULT_TRACERNEST_LOGO, DEFAULT_TRACERNEST_BANNER, DEFAULT_TRACENEST_LOGO, DEFAULT_TRACENEST_BANNER, extractRealIp } from '../index';
 import { getDashboardHtml } from '../ui/dashboard-html';
+import { runLaravelInstaller } from '../bin/install-laravel';
 
 interface MockResponseResult {
   statusCode: number;
@@ -2886,6 +2888,97 @@ test('Integration: Client IP & Real IP Extraction and Dialog Box Display', async
     vault.stop();
   } finally {
     if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+  }
+});
+
+test('Integration: Laravel Automated Installation & Kernel Scaffolding', async () => {
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const mockLaravelDir = './test_laravel_scaffold_' + Date.now();
+  if (existsSync(mockLaravelDir)) rmSync(mockLaravelDir, { recursive: true, force: true });
+
+  try {
+    // 1. Create a simulated Laravel project structure
+    mkdirSync(join(mockLaravelDir, 'app', 'Http'), { recursive: true });
+    mkdirSync(join(mockLaravelDir, 'bootstrap'), { recursive: true });
+    mkdirSync(join(mockLaravelDir, 'routes'), { recursive: true });
+    mkdirSync(join(mockLaravelDir, 'config'), { recursive: true });
+
+    // Mock artisan
+    writeFileSync(join(mockLaravelDir, 'artisan'), '#!/usr/bin/env php\n<?php\n');
+
+    // Mock app/Http/Kernel.php
+    writeFileSync(
+      join(mockLaravelDir, 'app', 'Http', 'Kernel.php'),
+      `<?php
+namespace App\\Http;
+use Illuminate\\Foundation\\Http\\Kernel as HttpKernel;
+
+class Kernel extends HttpKernel
+{
+    protected $middleware = [
+        \\App\\Http\\Middleware\\TrustProxies::class,
+        \\Illuminate\\Http\\Middleware\\HandleCors::class,
+    ];
+}
+`
+    );
+
+    // Mock bootstrap/app.php
+    writeFileSync(
+      join(mockLaravelDir, 'bootstrap', 'app.php'),
+      `<?php
+use Illuminate\\Foundation\\Application;
+use Illuminate\\Foundation\\Configuration\\Middleware;
+
+return Application::configure(basePath: dirname(__DIR__))
+    ->withRouting(
+        web: __DIR__.'/../routes/web.php',
+    )
+    ->withMiddleware(function (Middleware $middleware) {
+        //
+    })
+    ->create();
+`
+    );
+
+    // Mock routes/web.php
+    writeFileSync(
+      join(mockLaravelDir, 'routes', 'web.php'),
+      `<?php
+use Illuminate\\Support\\Facades\\Route;
+
+Route::get('/', function () {
+    return view('welcome');
+});
+`
+    );
+
+    // 2. Run the automated installer
+    runLaravelInstaller(['--path=' + mockLaravelDir]);
+
+    // 3. Verify all required files were created
+    assert.ok(existsSync(join(mockLaravelDir, 'config', 'tracernest.php')), 'config/tracernest.php must be created');
+    assert.ok(existsSync(join(mockLaravelDir, 'app', 'Http', 'Controllers', 'TracerNestController.php')), 'TracerNestController.php must be created');
+    assert.ok(existsSync(join(mockLaravelDir, 'app', 'Http', 'Middleware', 'TracerNestMiddleware.php')), 'TracerNestMiddleware.php must be created');
+    assert.ok(existsSync(join(mockLaravelDir, 'app', 'Logging', 'TracerNestMonologHandler.php')), 'TracerNestMonologHandler.php must be created');
+
+    // 4. Verify Kernel file registrations
+    const updatedKernel = readFileSync(join(mockLaravelDir, 'app', 'Http', 'Kernel.php'), 'utf8');
+    assert.ok(updatedKernel.includes('TracerNestMiddleware::class'), 'Kernel.php must contain TracerNestMiddleware');
+
+    const updatedBootstrap = readFileSync(join(mockLaravelDir, 'bootstrap', 'app.php'), 'utf8');
+    assert.ok(updatedBootstrap.includes('TracerNestMiddleware::class'), 'bootstrap/app.php must contain TracerNestMiddleware');
+
+    const updatedRoutes = readFileSync(join(mockLaravelDir, 'routes', 'web.php'), 'utf8');
+    assert.ok(updatedRoutes.includes('routes.php'), 'routes/web.php must mount TracerNest routes');
+
+    // 5. Test idempotency (running again does not break or duplicate entries)
+    runLaravelInstaller(['--path=' + mockLaravelDir]);
+    const secondKernel = readFileSync(join(mockLaravelDir, 'app', 'Http', 'Kernel.php'), 'utf8');
+    const matches = secondKernel.match(/TracerNestMiddleware/g);
+    assert.strictEqual(matches?.length, 1, 'TracerNestMiddleware must not be duplicated on repeated runs');
+  } finally {
+    if (existsSync(mockLaravelDir)) rmSync(mockLaravelDir, { recursive: true, force: true });
   }
 });
 

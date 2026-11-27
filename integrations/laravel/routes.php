@@ -18,6 +18,19 @@ use App\Http\Controllers\TracerNestController;
  *   require base_path('node_modules/tracernest-logger/integrations/laravel/routes.php');
  */
 
+// Automatically scaffold Controller, Middleware, and Config files on runtime and register in Kernel
+if (class_exists(\TracerNest\TracerNestInstaller::class)) {
+    \TracerNest\TracerNestInstaller::run();
+} else {
+    $installerPath = __DIR__ . '/TracerNestInstaller.php';
+    if (file_exists($installerPath)) {
+        require_once $installerPath;
+        if (class_exists(\TracerNest\TracerNestInstaller::class)) {
+            \TracerNest\TracerNestInstaller::run();
+        }
+    }
+}
+
 $rawPath = config('tracernest.path');
 $endpoint = config('tracernest.endpoint');
 

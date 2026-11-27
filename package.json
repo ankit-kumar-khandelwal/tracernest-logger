@@ -8,7 +8,9 @@
     "tracernest-reset-admin": "dist/bin/reset-admin.js",
     "tracenest-reset-admin": "dist/bin/reset-admin.js",
     "tracernest-server": "dist/bin/server.js",
-    "tracenest-server": "dist/bin/server.js"
+    "tracenest-server": "dist/bin/server.js",
+    "tracernest-install-laravel": "dist/bin/install-laravel.js",
+    "tracenest-install-laravel": "dist/bin/install-laravel.js"
   },
   "files": [
     "dist",

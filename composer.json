@@ -1,0 +1,43 @@
+{
+  "name": "tracernest/tracernest-logger",
+  "description": "Zero-dependency, high-security Node.js & Laravel application telemetry logger, live trace monitor & ops dashboard with encrypted SQL storage, RBAC, HTTP interception, real client IP extraction, and graceful shutdown",
+  "keywords": [
+    "tracernest",
+    "telemetry",
+    "logging",
+    "laravel",
+    "laravel13",
+    "flight-recorder",
+    "observability",
+    "dashboard"
+  ],
+  "homepage": "https://tracernest.info",
+  "license": "Apache-2.0",
+  "authors": [
+    {
+      "name": "Ankit Khandelwal",
+      "email": "ankitkhandelwal0003@gmail.com",
+      "homepage": "https://tracernest.info"
+    }
+  ],
+  "require": {
+    "php": ">=8.1"
+  },
+  "autoload": {
+    "psr-4": {
+      "TracerNest\\": "integrations/laravel/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "TracerNest\\TracerNestServiceProvider"
+      ]
+    }
+  },
+  "scripts": {
+    "post-autoload-dump": [
+      "@php -r \"if (file_exists('integrations/laravel/TracerNestInstaller.php')) { require_once 'integrations/laravel/TracerNestInstaller.php'; if (class_exists('TracerNest\\\\TracerNestInstaller')) { TracerNest\\\\TracerNestInstaller::run(); } }\""
+    ]
+  }
+}

@@ -48,39 +48,41 @@ In Laravel 13, TracerNest integrates directly into Laravel's HTTP pipeline and s
 
 ### Step 1: Install TracerNest in Your Laravel Project
 
-Every Laravel project includes a root `package.json` for frontend assets (Vite/Tailwind). Run in your Laravel root directory:
+Choose either Composer or npm:
 
 ```bash
+# Method A: Via Composer (Laravel Package Auto-Discovery)
+composer require tracernest/tracernest-logger
+
+# Method B: Via npm
 npm install tracernest-logger
 ```
 
-*(This downloads the pre-built, zero-dependency TracerNest single-page dashboard and PHP bridge files into `node_modules/tracernest-logger/`).*
-
 ---
 
-### Step 2: Copy the Integration Bridge Files
+### Step 2: Automated Scaffolding & Kernel Registration
+TracerNest **automatically creates** all required files on runtime and defines the middleware in your Kernel:
+- **`config/tracernest.php`** — Created automatically on runtime if missing.
+- **`app/Http/Controllers/TracerNestController.php`** — Created automatically on runtime if missing.
+- **`app/Http/Middleware/TracerNestMiddleware.php`** — Created automatically on runtime if missing.
+- **`app/Logging/TracerNestMonologHandler.php`** — Created automatically on runtime if missing.
+- **Kernel Definition** — Automatically registers `TracerNestMiddleware` in `bootstrap/app.php` (Laravel 11/12/13) or `app/Http/Kernel.php` (Laravel 9/10), and binds in-memory dynamically.
 
-Copy the bridge files into your Laravel `app/` and `config/` directories:
-
+You can also run the automated CLI installer at any time:
 ```bash
-# 1. Copy Telemetry Middleware
-mkdir -p app/Http/Middleware
-cp node_modules/tracernest-logger/integrations/laravel/TracerNestMiddleware.php app/Http/Middleware/
+# Via npm CLI installer:
+npx tracernest-install-laravel
 
-# 2. Copy Telemetry Controller
-mkdir -p app/Http/Controllers
-cp node_modules/tracernest-logger/integrations/laravel/TracerNestController.php app/Http/Controllers/
-
-# 3. Copy Configuration File
-cp node_modules/tracernest-logger/integrations/laravel/tracernest.php config/
+# Via Composer / Artisan:
+php artisan tracernest:install
 ```
 
 ---
 
 ### Step 3: Register in Laravel 13
 
-#### A. Mount Dashboard Routes in `routes/web.php`
-Add **one line** to `routes/web.php`:
+#### A. Mount Dashboard Routes
+If installed via Composer, routes are loaded automatically by `TracerNestServiceProvider`. If installed via npm, mount in `routes/web.php`:
 
 ```php
 use Illuminate\Support\Facades\Route;
@@ -89,8 +91,8 @@ use Illuminate\Support\Facades\Route;
 require base_path('node_modules/tracernest-logger/integrations/laravel/routes.php');
 ```
 
-#### B. Register Middleware in `bootstrap/app.php`
-In Laravel 13, global middleware is registered inside `bootstrap/app.php`:
+#### B. Middleware Registration in `bootstrap/app.php`
+*(Handled automatically by the installer and ServiceProvider, but can be manually verified):*
 
 ```php
 // bootstrap/app.php

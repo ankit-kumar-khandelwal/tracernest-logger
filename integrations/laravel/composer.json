@@ -1,0 +1,20 @@
+{
+  "name": "tracernest/tracernest-logger",
+  "description": "Zero-dependency, high-security Node.js & Laravel application telemetry logger, live trace monitor & ops dashboard",
+  "license": "Apache-2.0",
+  "require": {
+    "php": ">=8.1"
+  },
+  "autoload": {
+    "psr-4": {
+      "TracerNest\\": "./"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "TracerNest\\TracerNestServiceProvider"
+      ]
+    }
+  }
+}
