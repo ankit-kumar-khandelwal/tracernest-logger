@@ -15,6 +15,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Master Telemetry Enable / Disable Switch
+    |--------------------------------------------------------------------------
+    |
+    | When set to false, TracerNest completely bypasses request interception
+    | and Monolog writing. Useful for testing or disabling in specific environments.
+    |
+    */
+    'enabled' => env('TRACERNEST_ENABLED', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | TracerNest Telemetry Mode
     |--------------------------------------------------------------------------
     |
