@@ -58,6 +58,8 @@ return [
     |
     | The URL path where the TracerNest dashboard will be accessible on your
     | existing Laravel server. Default is '/tracernest'.
+    | If TRACERNEST_ENDPOINT contains a custom path (e.g. '/telemetry'),
+    | TracerNest automatically synchronizes the route prefix to prevent 404s.
     |
     */
     'path' => env('TRACERNEST_PATH', '/tracernest'),
@@ -78,11 +80,25 @@ return [
     | Standalone Server Endpoint (HTTP Mode Only)
     |--------------------------------------------------------------------------
     |
-    | URL where the remote TracerNest standalone server is running.
-    | Only utilized when 'mode' => 'http'.
+    | URL where the remote TracerNest standalone server or ingest endpoint is running.
+    | Only utilized when 'mode' => 'http'. TracerNest automatically resolves
+    | the route prefix from this endpoint (or appends 'path' if host-only)
+    | to guarantee ingest endpoints never encounter 404 Not Found errors.
     |
     */
     'endpoint' => env('TRACERNEST_ENDPOINT', 'http://127.0.0.1:8001/tracernest'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Expose Root Ingest API Alias
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, registers '/api/logs/ingest' and '/api/ingest' as root
+    | aliases in addition to the prefixed dashboard routes, preventing 404s
+    | when external microservices or log forwarders omit the routing prefix.
+    |
+    */
+    'expose_root_api' => env('TRACERNEST_EXPOSE_ROOT_API', true),
 
     /*
     |--------------------------------------------------------------------------

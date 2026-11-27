@@ -2620,8 +2620,25 @@ test('Integration: Laravel 13 Telemetry Ingestion API (POST /api/logs/ingest)', 
     // Verify payload encryption on request/response body
     assert.ok(orderLog?.metadata?.http?.requestBody?.encrypted || orderLog?.metadata?.http?.requestBody?.__encrypted, 'Payload must be encrypted with AES-256-GCM');
 
-    // 5. Verify database persistence
-    assert.strictEqual(tracer.sqlStore.getLogsCount(), 3, 'Logs must be persisted to SQL store');
+    // 5. Verify direct root fallback ingestion (without basePath prefix e.g. POST /api/logs/ingest)
+    const directRootReq = createMockReqRes({
+      method: 'POST',
+      url: '/api/logs/ingest',
+      headers: {
+        'x-tracernest-key': masterSecret
+      },
+      body: {
+        level: 'info',
+        source: 'laravel',
+        message: 'Direct root fallback ingest without prefix'
+      }
+    });
+    const handled = await tracer.handleRequest(directRootReq.req, directRootReq.res);
+    assert.strictEqual(handled, true);
+    assert.strictEqual(directRootReq.getResponse().statusCode, 200);
+
+    // 6. Verify database persistence
+    assert.strictEqual(tracer.sqlStore.getLogsCount(), 4, 'Logs must be persisted to SQL store');
 
     tracer.stop();
     tracer.sqlStore.close();

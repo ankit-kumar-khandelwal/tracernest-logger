@@ -53,6 +53,22 @@ class TracerNestMiddleware
             ?? $request->header('true-client-ip')
             ?? $clientIp;
 
+        // Automatically resolve TracerNest route prefix to prevent logging own dashboard requests
+        $rawPath = config('tracernest.path');
+        $endpointConfig = config('tracernest.endpoint');
+        if ((empty($rawPath) || $rawPath === '/tracernest') && !empty($endpointConfig)) {
+            $epPath = parse_url($endpointConfig, PHP_URL_PATH);
+            if (!empty($epPath) && $epPath !== '/') {
+                $rawPath = $epPath;
+            }
+        }
+        $tracernestPrefix = '/' . trim($rawPath ?: '/tracernest', '/');
+
+        // Exclude TracerNest's own dashboard and API endpoints from telemetry capture
+        if ($url === $tracernestPrefix || str_starts_with($url, $tracernestPrefix . '/')) {
+            return;
+        }
+
         // Check excluded routes
         $excluded = config('tracernest.exclude_routes', ['/up', '/healthz', '/livewire/update', '/sanctum/csrf-cookie']);
         foreach ($excluded as $ex) {
@@ -119,6 +135,21 @@ class TracerNestMiddleware
 
         // Mode 2: Asynchronous HTTP Ingestion to TracerNest Server
         $endpoint = rtrim(config('tracernest.endpoint', 'http://127.0.0.1:8001/tracernest'), '/');
+
+        // Automatically synchronize and take the prefix of routing if endpoint has no path component
+        $parsedEndpoint = parse_url($endpoint);
+        $endpointPath = $parsedEndpoint['path'] ?? '';
+
+        if (empty($endpointPath) || $endpointPath === '/') {
+            $endpoint = rtrim($endpoint, '/') . $tracernestPrefix;
+        }
+
+        // Avoid double-appending /api/logs/ingest if already present
+        $ingestUrl = $endpoint;
+        if (!str_ends_with($ingestUrl, '/api/logs/ingest') && !str_ends_with($ingestUrl, '/api/ingest')) {
+            $ingestUrl = rtrim($ingestUrl, '/') . '/api/logs/ingest';
+        }
+
         $apiKey = config('tracernest.key');
 
         try {
@@ -127,7 +158,7 @@ class TracerNestMiddleware
                     'x-tracernest-key' => $apiKey,
                     'Content-Type' => 'application/json',
                 ])
-                ->post($endpoint . '/api/logs/ingest', [
+                ->post($ingestUrl, [
                     'level' => $level,
                     'source' => 'laravel',
                     'message' => $message,

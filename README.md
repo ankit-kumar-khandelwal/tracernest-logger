@@ -820,9 +820,10 @@ return [
 | `mode` | `TRACERNEST_MODE` | `string` | `'database'` | `'database'` (zero-overhead direct insert) or `'http'` (remote server ingest). |
 | `connection` | `TRACERNEST_DB_CONNECTION` | `string\|null` | `null` | Name of database connection from `config/database.php` (`null` = default DB). |
 | `table_prefix` | `TRACERNEST_TABLE_PREFIX` | `string` | `'tracenest_'` | Prefix for generated database tables (`tracenest_logs`, `tracenest_users`). |
-| `path` | `TRACERNEST_PATH` | `string` | `'/tracernest'` | URI prefix for the web dashboard on your Laravel server. |
+| `path` | `TRACERNEST_PATH` | `string` | `'/tracernest'` | URI prefix for the web dashboard on your Laravel server. Automatically synchronized with `endpoint` path if customized. |
 | `key` | `TRACERNEST_KEY` | `string` | `env('APP_KEY')` | Secret key used for HMAC session tokens and AES-256-GCM payload encryption. |
-| `endpoint` | `TRACERNEST_ENDPOINT` | `string` | `'http://127.0.0.1:8001/tracernest'` | Target URL when operating in remote `'http'` mode. |
+| `endpoint` | `TRACERNEST_ENDPOINT` | `string` | `'http://127.0.0.1:8001/tracernest'` | Target URL when operating in remote `'http'` mode. Routing prefix is automatically synchronized to prevent 404s. |
+| `expose_root_api` | `TRACERNEST_EXPOSE_ROOT_API` | `bool` | `true` | Registers `/api/logs/ingest` and `/api/ingest` as root fallbacks to prevent 404s when microservices omit the route prefix. |
 | `exclude_routes` | &mdash; | `array` | `['/up', ...]` | Array of route paths or wildcards (`'/horizon/*'`) excluded from capture. |
 | `sanitize_fields`| &mdash; | `array` | `['password', ...]`| Parameter keys masked with `••••••••••••` before saving. |
 | `body_size_limit`| `TRACERNEST_BODY_LIMIT` | `int` | `65536` (64 KB) | Byte limit for request and response body storage to protect database RAM. |

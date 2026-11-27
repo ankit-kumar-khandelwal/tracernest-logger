@@ -78,6 +78,28 @@ class TracerNestMonologHandler extends AbstractProcessingHandler
 
         // Mode 2: Asynchronous HTTP Ingestion to TracerNest Server
         $endpoint = rtrim(config('tracernest.endpoint', 'http://127.0.0.1:8001/tracernest'), '/');
+        $rawPath = config('tracernest.path');
+        if ((empty($rawPath) || $rawPath === '/tracernest') && !empty($endpoint)) {
+            $epPath = parse_url($endpoint, PHP_URL_PATH);
+            if (!empty($epPath) && $epPath !== '/') {
+                $rawPath = $epPath;
+            }
+        }
+        $tracernestPrefix = '/' . trim($rawPath ?: '/tracernest', '/');
+
+        // Automatically synchronize and take the prefix of routing if endpoint has no path component
+        $parsedEndpoint = parse_url($endpoint);
+        $endpointPath = $parsedEndpoint['path'] ?? '';
+        if (empty($endpointPath) || $endpointPath === '/') {
+            $endpoint = rtrim($endpoint, '/') . $tracernestPrefix;
+        }
+
+        // Avoid double-appending /api/logs/ingest if already present
+        $ingestUrl = $endpoint;
+        if (!str_ends_with($ingestUrl, '/api/logs/ingest') && !str_ends_with($ingestUrl, '/api/ingest')) {
+            $ingestUrl = rtrim($ingestUrl, '/') . '/api/logs/ingest';
+        }
+
         $apiKey = config('tracernest.key');
 
         try {
@@ -86,7 +108,7 @@ class TracerNestMonologHandler extends AbstractProcessingHandler
                     'x-tracernest-key' => $apiKey,
                     'Content-Type' => 'application/json',
                 ])
-                ->post($endpoint . '/api/logs/ingest', [
+                ->post($ingestUrl, [
                     'level' => $level,
                     'source' => 'laravel',
                     'message' => $record->message,

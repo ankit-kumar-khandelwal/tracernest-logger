@@ -237,7 +237,7 @@ class TracerNestController
     // 1. Dashboard UI
     // =========================================================================
 
-    public function dashboard(): Response
+    public function dashboard(?Request $request = null): Response
     {
         $possiblePaths = [
             __DIR__ . '/dashboard.html',
@@ -260,6 +260,33 @@ class TracerNestController
                 500,
                 ['Content-Type' => 'text/html']
             );
+        }
+
+        // Dynamically resolve the effective route prefix so all SPA API calls hit the right prefix
+        $rawPath = config('tracernest.path');
+        $endpoint = config('tracernest.endpoint');
+        if ((empty($rawPath) || $rawPath === '/tracernest') && !empty($endpoint)) {
+            $parsedPath = parse_url($endpoint, PHP_URL_PATH);
+            if (!empty($parsedPath) && $parsedPath !== '/') {
+                $rawPath = $parsedPath;
+            }
+        }
+        $effectiveBasePath = '/' . trim($rawPath ?: '/tracernest', '/');
+
+        // Check if the current route has a group prefix (e.g. Route::prefix('admin')->group(...))
+        if ($request && method_exists($request, 'route') && $request->route()) {
+            $routePrefix = $request->route()->getPrefix();
+            if (!empty($routePrefix)) {
+                $effectiveBasePath = '/' . trim($routePrefix, '/');
+            }
+        }
+
+        // Inject window.__TRACERNEST_BASE_PATH__ into HTML to guarantee the SPA never defaults to 404
+        $injectScript = '<script>window.__TRACERNEST_BASE_PATH__ = ' . json_encode($effectiveBasePath) . ';</script>';
+        if (str_contains($html, '<head>')) {
+            $html = str_replace('<head>', "<head>\n  {$injectScript}", $html);
+        } else {
+            $html = "{$injectScript}\n{$html}";
         }
 
         return response($html, 200, [

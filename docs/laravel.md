@@ -188,9 +188,10 @@ TRACERNEST_ENDPOINT=http://127.0.0.1:8001/tracernest
 | `mode` | `string` | `'database'` | Telemetry write mode: `'database'` (zero-overhead direct insert) or `'http'` (remote server ingest). |
 | `connection` | `string\|null` | `null` | Name of the database connection from `config/database.php` (e.g. `'mysql'`, `'sqlite'`). `null` uses default DB. |
 | `table_prefix` | `string` | `'tracenest_'` | Prefix for generated database tables (`tracenest_logs`, `tracenest_users`). |
-| `path` | `string` | `'/tracernest'` | URI prefix for the web dashboard on your Laravel server. |
+| `path` | `string` | `'/tracernest'` | URI prefix for the web dashboard on your Laravel server. Automatically synchronized with `endpoint` path if customized. |
 | `key` | `string` | `env('APP_KEY')` | Secret key used for HMAC session tokens and AES-256-GCM payload encryption. |
-| `endpoint` | `string` | `'http://127.0.0.1:8001/tracernest'` | Target URL when operating in remote `'http'` mode. |
+| `endpoint` | `string` | `'http://127.0.0.1:8001/tracernest'` | Target URL when operating in remote `'http'` mode. Routing prefix is automatically resolved to guarantee ingest requests never 404. |
+| `expose_root_api` | `bool` | `true` | Registers root `/api/logs/ingest` and `/api/ingest` aliases in addition to the prefixed routes, preventing 404s when microservices omit the route prefix. |
 | `exclude_routes` | `array` | `['/up', '/healthz', ...]` | Array of route paths or wildcard patterns (`'/livewire/*'`) excluded from telemetry capture. |
 | `sanitize_fields`| `array` | `['password', 'token', ...]` | Array of JSON and query parameter keys masked with `••••••••••••` before saving. |
 | `body_size_limit`| `int` | `65536` (64 KB) | Byte limit for request and response body storage to protect database and RAM overhead. |
@@ -242,13 +243,26 @@ return [
 
 ## 🗺️ Complete Laravel 13 Route Catalog
 
+### 🔄 Dynamic Route Prefix Resolution & 404 Prevention
+TracerNest automatically harmonizes route prefixes between your Laravel application, the frontend SPA dashboard, and external HTTP ingest clients:
+1. **Endpoint & Path Synchronization**: If you configure `TRACERNEST_ENDPOINT` (e.g. `http://localhost:8000/telemetry`), `routes.php` automatically extracts the `/telemetry` path prefix so you don't have to duplicate configuration in both places.
+2. **SPA Prefix Injection (`window.__TRACERNEST_BASE_PATH__`)**: `TracerNestController` injects the exact runtime base path into the dashboard HTML, ensuring all AJAX fetches (logs, health, auth, alerts) query the correct prefix without 404 errors.
+3. **Trailing Slash Resilience**: Both `Route::get('')` and `Route::get('/')` are registered under the prefix, allowing `/tracernest` and `/tracernest/` to resolve seamlessly without redirects or 404s.
+4. **Root Ingestion Alias**: `POST /api/logs/ingest` and `POST /api/ingest` are registered at both the prefixed path (`/tracernest/api/logs/ingest`) and root path (`/api/logs/ingest`), ensuring third-party microservices or log forwarders never receive 404s if they omit the route prefix.
+
 TracerNest registers the full operations and telemetry routing suite directly inside your Laravel application under your configured `TRACERNEST_PATH` (default: `/tracernest`):
 
 | HTTP Method | URI Pattern | Action / Purpose | Access / Auth |
 | :--- | :--- | :--- | :--- |
-| **`GET`** | `/tracernest` | Serves Single-Page Application (SPA) dashboard UI | Public |
+| **`GET`** | `/tracernest` | Serves Single-Page Application (SPA) dashboard UI (both with and without trailing slash) | Public |
 | **`GET`** | `/tracernest/login` | Direct login view | Public |
 | **`GET`** | `/tracernest/setup` | Direct first-time root administrator setup view | Public |
+| **`GET`** | `/tracernest/decryption` | Direct decryption utility view | Public |
+| **`GET`** | `/tracernest/logs` | Direct logs flight recorder view | Authenticated |
+| **`GET`** | `/tracernest/settings` | Direct system settings & retention view | Authenticated |
+| **`GET`** | `/tracernest/alerts` | Direct notifications & alerts view | Admin |
+| **`GET`** | `/tracernest/audit` | Direct audit logs view | Admin |
+| **`GET`** | `/tracernest/users` | Direct user management view | Admin |
 | **`GET`** | `/tracernest/health` | System health, database driver, memory & CPU load | Public / Operator |
 | **`GET`** | `/tracernest/api/health` | Diagnostic probe for orchestrators & monitoring | Public / Operator |
 | **`GET`** | `/tracernest/api/metrics` | Real-time throughput, error counts & peak memory stats | Operator / Admin |

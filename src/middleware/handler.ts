@@ -192,7 +192,15 @@ export class HttpHandler {
     }
 
     if (!matchedPrefix) {
-      return false;
+      // Direct root microservice ingest fallback (e.g. POST /api/logs/ingest or /api/ingest)
+      // Allows callers without basePath prefix to successfully ingest logs without 404
+      const testPath = rawUrl.split('?')[0];
+      if (req.method === 'POST' && (testPath === '/api/logs/ingest' || testPath === '/api/ingest')) {
+        matchedPrefix = '';
+        subPath = testPath;
+      } else {
+        return false;
+      }
     }
 
     if (!subPath || !subPath.startsWith('/')) {

@@ -3068,16 +3068,18 @@
   </div>
 
   <script>
-    // Automatically detect the effective base path from the browser URL to seamlessly support
-    // Nginx reverse proxies (e.g. location /api/ { proxy_pass http://localhost:3000/; }),
-    // API gateways, subpath routing, and direct port access without requiring Nginx configuration changes.
+    // Automatically detect the effective base path from window.__TRACERNEST_BASE_PATH__ (injected by Laravel / Node.js)
+    // or browser URL to seamlessly support custom prefixes, Nginx reverse proxies, API gateways, and subpaths.
     const BASE_PATH = (function() {
+      if (typeof window !== 'undefined' && window.__TRACERNEST_BASE_PATH__) {
+        return window.__TRACERNEST_BASE_PATH__;
+      }
       try {
         let p = (typeof window !== 'undefined' && window.location && window.location.pathname) ? window.location.pathname : '';
         while (p.endsWith('/') && p.length > 1) {
           p = p.slice(0, -1);
         }
-        const subPages = ['/login', '/setup', '/decryption'];
+        const subPages = ['/login', '/setup', '/decryption', '/logs', '/settings', '/alerts', '/audit', '/users', '/metrics', '/health'];
         for (let i = 0; i < subPages.length; i++) {
           const page = subPages[i];
           if (p.endsWith(page)) {
