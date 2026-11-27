@@ -1,6 +1,6 @@
 {
   "name": "tracernest-logger",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "description": "Zero-dependency, high-security Node.js application telemetry logger, live trace monitor & ops dashboard with encrypted SQL storage, RBAC, HTTP interception, real client IP extraction, and graceful shutdown",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

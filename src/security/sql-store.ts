@@ -1,4 +1,4 @@
-import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync, readdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
@@ -79,6 +79,9 @@ export class SqlStore {
     this.mysqlConfig = options?.mysql;
 
     let p = options?.tablePrefix || 'tracenest_';
+    if (!/^[a-zA-Z0-9_]{1,32}$/.test(p)) {
+      throw new Error(`[TracerNest-Logger] Security Error: Invalid tablePrefix '${p}'. Table prefixes must be 1-32 alphanumeric characters and underscores only.`);
+    }
     if (!p.endsWith('_')) p += '_';
     this.tablePrefix = p;
     this.tableUsers = `${this.tablePrefix}users`;
@@ -123,12 +126,12 @@ export class SqlStore {
       throw err;
     }
 
-    // If sqlFilePath exists on disk and sqlite is empty, restore data from sql file
+    // If sqlFilePath exists on disk and sqlite is empty, restore data from sql file safely
     if (this.dialect === 'sqlite' && existsSync(this.sqlFilePath) && this.getUserCount() === 0) {
       try {
         const sqlContent = readFileSync(this.sqlFilePath, 'utf8');
         if (sqlContent && sqlContent.trim().length > 0) {
-          this.db.exec(sqlContent);
+          this.safeRestoreFromSqlFile(sqlContent);
         }
       } catch {
         // Ignore
@@ -532,7 +535,7 @@ export class SqlStore {
         this.db.close();
       } catch { }
 
-      // 2. Remove primary SQLite file and its journals/dumps
+      // 2. Remove primary SQLite file and its journals/dumps (strictly targeted, never deletes adjacent third-party database files)
       const directFiles = [
         this.sqliteFilePath,
         `${this.sqliteFilePath}-wal`,
@@ -552,38 +555,7 @@ export class SqlStore {
         } catch { }
       }
 
-      // 3. Scan directory of sqliteFilePath to remove any remaining sqlite/sql files (preserving key files)
-      const sqliteDir = dirname(this.sqliteFilePath);
-      if (sqliteDir && existsSync(sqliteDir)) {
-        try {
-          const files = readdirSync(sqliteDir);
-          for (const file of files) {
-            // Never delete master key file
-            if (
-              file === '.master.key' ||
-              file.endsWith('.key') ||
-              file.includes('master-key') ||
-              file.includes('master.key')
-            ) {
-              continue;
-            }
-            if (
-              file.endsWith('.sqlite') ||
-              file.endsWith('.sqlite-wal') ||
-              file.endsWith('.sqlite-shm') ||
-              file.endsWith('.sql') ||
-              file.endsWith('.db') ||
-              file.endsWith('.sqlite3')
-            ) {
-              try {
-                unlinkSync(join(sqliteDir, file));
-              } catch { }
-            }
-          }
-        } catch { }
-      }
-
-      // 4. Verify that .master.key remains safely on disk
+      // 3. Verify that .master.key remains safely on disk
       if (existsSync(this.keyFilePath)) {
         console.log(`[TracerNest-Logger] SQLite files cleaned up. Master encryption key preserved at '${this.keyFilePath}'.`);
       }
@@ -1592,10 +1564,16 @@ export class SqlStore {
       if (users.length > 0) {
         sqlContent += `-- Persisted User Accounts (Hashed & Salted)\n`;
         for (const u of users) {
-          const uLogin = u.last_login_at ? u.last_login_at : 'NULL';
+          const id = escapeSqlString(u.id);
+          const username = escapeSqlString(u.username);
+          const hash = escapeSqlString(u.password_hash);
+          const salt = escapeSqlString(u.salt);
+          const role = escapeSqlString(u.role);
+          const createdAt = escapeSqlNumber(u.created_at);
+          const uLogin = escapeSqlNullableNumber(u.last_login_at);
           const mustChange = u.must_change_password ? 1 : 0;
-          const tokenVer = u.token_version != null ? u.token_version : 1;
-          sqlContent += `INSERT OR REPLACE INTO ${this.tableUsers} (id, username, password_hash, salt, role, created_at, last_login_at, must_change_password, token_version) VALUES ('${u.id}', '${u.username}', '${u.password_hash}', '${u.salt}', '${u.role}', ${u.created_at}, ${uLogin}, ${mustChange}, ${tokenVer});\n`;
+          const tokenVer = escapeSqlNumber(u.token_version, 1);
+          sqlContent += `INSERT OR REPLACE INTO ${this.tableUsers} (id, username, password_hash, salt, role, created_at, last_login_at, must_change_password, token_version) VALUES (${id}, ${username}, ${hash}, ${salt}, ${role}, ${createdAt}, ${uLogin}, ${mustChange}, ${tokenVer});\n`;
         }
         sqlContent += `\n`;
       }
@@ -1603,16 +1581,26 @@ export class SqlStore {
       if (alerts.length > 0) {
         sqlContent += `-- Persisted Alert Integrations (AES-256-GCM Encrypted)\n`;
         for (const a of alerts) {
-          sqlContent += `INSERT OR REPLACE INTO ${this.tableAlerts} (id, channel, enabled, level_threshold, ciphertext, iv, auth_tag, salt, created_at, updated_at) VALUES ('${a.id}', '${a.channel}', ${a.enabled}, '${a.level_threshold}', '${a.ciphertext}', '${a.iv}', '${a.auth_tag}', '${a.salt}', ${a.created_at}, ${a.updated_at});\n`;
+          const id = escapeSqlString(a.id);
+          const channel = escapeSqlString(a.channel);
+          const enabled = a.enabled ? 1 : 0;
+          const threshold = escapeSqlString(a.level_threshold);
+          const ciphertext = escapeSqlString(a.ciphertext);
+          const iv = escapeSqlString(a.iv);
+          const authTag = escapeSqlString(a.auth_tag);
+          const salt = escapeSqlString(a.salt);
+          const createdAt = escapeSqlNumber(a.created_at);
+          const updatedAt = escapeSqlNumber(a.updated_at);
+          sqlContent += `INSERT OR REPLACE INTO ${this.tableAlerts} (id, channel, enabled, level_threshold, ciphertext, iv, auth_tag, salt, created_at, updated_at) VALUES (${id}, ${channel}, ${enabled}, ${threshold}, ${ciphertext}, ${iv}, ${authTag}, ${salt}, ${createdAt}, ${updatedAt});\n`;
         }
         sqlContent += `\n`;
       }
 
       const excludedRules = this.getExcludedRoutes();
       if (excludedRules.length > 0) {
-        const escapedMeta = JSON.stringify(excludedRules).replace(/'/g, "''");
+        const escapedMeta = escapeSqlString(JSON.stringify(excludedRules));
         sqlContent += `-- Persisted Excluded / Skipped API Routes\n`;
-        sqlContent += `INSERT OR REPLACE INTO ${this.tableMeta} (key, value) VALUES ('excluded_routes', '${escapedMeta}');\n\n`;
+        sqlContent += `INSERT OR REPLACE INTO ${this.tableMeta} (key, value) VALUES ('excluded_routes', ${escapedMeta});\n\n`;
       }
 
       const dir = dirname(this.sqlFilePath);
@@ -1652,5 +1640,197 @@ export class SqlStore {
   public getSqlFilePath(): string {
     return this.sqlFilePath;
   }
+
+  public safeRestoreFromSqlFile(sqlContent: string): void {
+    if (!sqlContent || typeof sqlContent !== 'string') return;
+
+    let userStmt: StatementSync | null = null;
+    let alertStmt: StatementSync | null = null;
+    let metaStmt: StatementSync | null = null;
+
+    try {
+      userStmt = this.db.prepare(
+        `INSERT OR REPLACE INTO ${this.tableUsers} (id, username, password_hash, salt, role, created_at, last_login_at, must_change_password, token_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      alertStmt = this.db.prepare(
+        `INSERT OR REPLACE INTO ${this.tableAlerts} (id, channel, enabled, level_threshold, ciphertext, iv, auth_tag, salt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      metaStmt = this.db.prepare(
+        `INSERT OR REPLACE INTO ${this.tableMeta} (key, value) VALUES (?, ?)`
+      );
+    } catch {
+      return;
+    }
+
+    // Split statements safely by semicolon outside of quoted strings
+    const statements: string[] = [];
+    let current = '';
+    let inQuote = false;
+    let quoteChar = '';
+
+    for (let i = 0; i < sqlContent.length; i++) {
+      const char = sqlContent[i];
+      if (inQuote) {
+        current += char;
+        if (char === quoteChar) {
+          // Check for escaped quote (e.g. '' or \')
+          if (quoteChar === "'" && i + 1 < sqlContent.length && sqlContent[i + 1] === "'") {
+            current += sqlContent[i + 1];
+            i++;
+          } else if (sqlContent[i - 1] !== '\\') {
+            inQuote = false;
+          }
+        }
+      } else {
+        if (char === "'" || char === '"' || char === '`') {
+          inQuote = true;
+          quoteChar = char;
+          current += char;
+        } else if (char === ';') {
+          if (current.trim().length > 0) {
+            statements.push(current.trim());
+          }
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+    }
+    if (current.trim().length > 0) {
+      statements.push(current.trim());
+    }
+
+    const parseSqlValues = (valuesStr: string): (string | number | null)[] => {
+      const result: (string | number | null)[] = [];
+      let i = 0;
+      const len = valuesStr.length;
+      while (i < len && valuesStr[i] !== '(') i++;
+      if (i < len && valuesStr[i] === '(') i++;
+
+      while (i < len) {
+        while (i < len && /\s/.test(valuesStr[i])) i++;
+        if (i >= len || valuesStr[i] === ')') break;
+
+        if (valuesStr[i] === "'") {
+          i++; // Skip opening quote
+          let str = '';
+          while (i < len) {
+            if (valuesStr[i] === "'") {
+              if (i + 1 < len && valuesStr[i + 1] === "'") {
+                str += "'";
+                i += 2;
+              } else {
+                i++; // Skip closing quote
+                break;
+              }
+            } else if (valuesStr[i] === '\\' && i + 1 < len) {
+              str += valuesStr[i + 1];
+              i += 2;
+            } else {
+              str += valuesStr[i];
+              i++;
+            }
+          }
+          result.push(str);
+        } else if (valuesStr.substring(i, i + 4).toUpperCase() === 'NULL') {
+          result.push(null);
+          i += 4;
+        } else {
+          let token = '';
+          while (i < len && valuesStr[i] !== ',' && valuesStr[i] !== ')' && !/\s/.test(valuesStr[i])) {
+            token += valuesStr[i];
+            i++;
+          }
+          if (token.toLowerCase() === 'true') {
+            result.push(1);
+          } else if (token.toLowerCase() === 'false') {
+            result.push(0);
+          } else {
+            const num = Number(token);
+            result.push(isNaN(num) ? token : num);
+          }
+        }
+
+        while (i < len && /\s/.test(valuesStr[i])) i++;
+        if (i < len && valuesStr[i] === ',') i++;
+      }
+      return result;
+    };
+
+    for (const stmt of statements) {
+      // Must strictly be an INSERT OR REPLACE INTO statement
+      if (!stmt.toUpperCase().startsWith('INSERT OR REPLACE INTO')) {
+        // Strictly ignore/skip DDL, DROP, ALTER, DELETE, ATTACH, PRAGMA, etc.
+        continue;
+      }
+
+      const match = stmt.match(/^INSERT\s+OR\s+REPLACE\s+INTO\s+([`"'a-zA-Z0-9_]+)\s*\([^)]+\)\s*VALUES\s*(.*)$/is);
+      if (!match) continue;
+
+      const rawTable = match[1].replace(/[`"']/g, '').toLowerCase();
+      const rawValues = match[2].trim();
+
+      if (rawTable === this.tableUsers.toLowerCase() || rawTable.endsWith('_users') || rawTable === 'users') {
+        try {
+          const vals = parseSqlValues(rawValues);
+          if (vals.length >= 6) {
+            const id = String(vals[0] || '');
+            const username = String(vals[1] || '');
+            const password_hash = String(vals[2] || '');
+            const salt = String(vals[3] || '');
+            const role = String(vals[4] || 'viewer');
+            const created_at = typeof vals[5] === 'number' ? vals[5] : Date.now();
+            const last_login_at = typeof vals[6] === 'number' ? vals[6] : null;
+            const must_change_password = vals[7] ? 1 : 0;
+            const token_version = typeof vals[8] === 'number' ? vals[8] : 1;
+            userStmt.run(id, username, password_hash, salt, role, created_at, last_login_at, must_change_password, token_version);
+          }
+        } catch { }
+      } else if (rawTable === this.tableAlerts.toLowerCase() || rawTable.endsWith('_alert_configs') || rawTable === 'alert_configs') {
+        try {
+          const vals = parseSqlValues(rawValues);
+          if (vals.length >= 10) {
+            const id = String(vals[0] || '');
+            const channel = String(vals[1] || '');
+            const enabled = vals[2] ? 1 : 0;
+            const level_threshold = String(vals[3] || 'error');
+            const ciphertext = String(vals[4] || '');
+            const iv = String(vals[5] || '');
+            const auth_tag = String(vals[6] || '');
+            const salt = String(vals[7] || '');
+            const created_at = typeof vals[8] === 'number' ? vals[8] : Date.now();
+            const updated_at = typeof vals[9] === 'number' ? vals[9] : Date.now();
+            alertStmt.run(id, channel, enabled, level_threshold, ciphertext, iv, auth_tag, salt, created_at, updated_at);
+          }
+        } catch { }
+      } else if (rawTable === this.tableMeta.toLowerCase() || rawTable.endsWith('_system_meta') || rawTable === 'system_meta') {
+        try {
+          const vals = parseSqlValues(rawValues);
+          if (vals.length >= 2) {
+            const key = String(vals[0] || '');
+            const value = String(vals[1] || '');
+            metaStmt.run(key, value);
+          }
+        } catch { }
+      }
+    }
+  }
+}
+
+function escapeSqlString(val: any): string {
+  if (val === null || val === undefined) return "''";
+  const str = String(val);
+  return "'" + str.replace(/'/g, "''") + "'";
+}
+
+function escapeSqlNumber(val: any, fallback = 0): number {
+  const n = Number(val);
+  return isNaN(n) ? fallback : n;
+}
+
+function escapeSqlNullableNumber(val: any): string {
+  if (val === null || val === undefined) return 'NULL';
+  const n = Number(val);
+  return isNaN(n) ? 'NULL' : String(n);
 }
 

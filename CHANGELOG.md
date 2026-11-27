@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.3] - 2026-11-27
+
+### Security & Hardening
+- **SQL Identifier Validation:** Enforced strict regex validation (`/^[a-zA-Z0-9_]{1,32}$/`) for `tablePrefix` to prevent SQL identifier tampering and injection into internal DDL/DML queries.
+- **Safe Parameterized SQL Export Restoration:** Replaced raw `db.exec(sqlContent)` on SQL file restoration with a secure, linear parser and prepared statements (`safeRestoreFromSqlFile`). Only valid row values for authorized tables (`users`, `alert_configs`, `system_meta`) are extracted and bound as parameterized values (`?`); all dangerous/executable statements (`DROP`, `ALTER`, `ATTACH`, `PRAGMA`, `DELETE`) are strictly discarded.
+- **Sanitized SQL Export Values:** Implemented strict SQL string and numeric escaping helpers (`escapeSqlString`, `escapeSqlNumber`, `escapeSqlNullableNumber`) across user accounts, alert integrations, and metadata during `.sql` export generation in `syncSqlFile()`, preventing SQL syntax corruption or injection when storing or exporting records.
+- **Targeted Migration Cleanup (Restricted Filesystem Scope):** Completely removed broad directory traversal (`readdirSync`) during MySQL migration cleanup. Deletion is strictly restricted to TracerNest's configured file paths (`.sqlite`, `-wal`, `-shm`, `.sql`), protecting `.master.key` and ensuring adjacent host application or third-party database files (`.db`, `.sqlite`, `.sql`) are never touched.
+
+---
+
 ## [1.9.2] - 2026-11-27
 
 ### Added

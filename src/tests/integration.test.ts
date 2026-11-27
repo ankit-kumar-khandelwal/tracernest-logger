@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, unlinkSync, rmSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, unlinkSync, rmSync, readdirSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { EventEmitter } from 'node:events';
 import { Socket } from 'node:net';
 import { join } from 'node:path';
 import vm from 'node:vm';
-import { TracerNestLogger, TraceNest, LogVault, DEFAULT_TRACERNEST_LOGO, DEFAULT_TRACERNEST_BANNER, DEFAULT_TRACENEST_LOGO, DEFAULT_TRACENEST_BANNER, extractRealIp } from '../index';
+import { TracerNestLogger, TraceNest, LogVault, DEFAULT_TRACERNEST_LOGO, DEFAULT_TRACERNEST_BANNER, DEFAULT_TRACENEST_LOGO, DEFAULT_TRACENEST_BANNER, extractRealIp, SqlStore } from '../index';
 import { getDashboardHtml } from '../ui/dashboard-html';
 import { runLaravelInstaller } from '../bin/install-laravel';
 
@@ -2981,6 +2981,152 @@ Route::get('/', function () {
     if (existsSync(mockLaravelDir)) rmSync(mockLaravelDir, { recursive: true, force: true });
   }
 });
+
+test('Security: Database persistence & migration hardening', async () => {
+  const testDir = join(__dirname, '../../test-sql-security-' + Date.now());
+  mkdirSync(testDir, { recursive: true });
+
+  const testSqlite = join(testDir, 'test.sqlite');
+  const testSql = join(testDir, 'test.sql');
+  const testKey = join(testDir, '.master.key');
+  const adjacentDb = join(testDir, 'host_application.db');
+  const adjacentSqlite = join(testDir, 'customer_data.sqlite');
+
+  // Place adjacent database files that must NEVER be deleted during migration cleanup
+  writeFileSync(adjacentDb, 'HOST_DB_CONTENT');
+  writeFileSync(adjacentSqlite, 'CUSTOMER_SQLITE_CONTENT');
+
+  try {
+    // 1. Unvalidated tablePrefix security test
+    assert.throws(
+      () => {
+        new SqlStore({
+          dataDir: testDir,
+          tablePrefix: 'tracenest_; DROP TABLE users; --'
+        });
+      },
+      (err: any) => {
+        return err.message.includes('Security Error: Invalid tablePrefix');
+      },
+      'Invalid tablePrefix containing SQL injection syntax must throw Security Error'
+    );
+
+    assert.throws(
+      () => {
+        new SqlStore({
+          dataDir: testDir,
+          tablePrefix: 'bad prefix with spaces'
+        });
+      },
+      (err: any) => {
+        return err.message.includes('Security Error: Invalid tablePrefix');
+      },
+      'tablePrefix with spaces must throw Security Error'
+    );
+
+    // Valid table prefix works smoothly
+    const validStore = new SqlStore({
+      sqliteFilePath: testSqlite,
+      sqlFilePath: testSql,
+      keyFilePath: testKey,
+      tablePrefix: 'custom_pref_'
+    });
+    assert.strictEqual(validStore.tableUsers, 'custom_pref_users');
+    validStore.close();
+
+    // 2. Unescaped values in generated SQL export & Safe Parameterized Import
+    const store = new SqlStore({
+      sqliteFilePath: testSqlite,
+      sqlFilePath: testSql,
+      keyFilePath: testKey
+    });
+
+    // Create user with tricky characters (single quotes, backslashes, SQL injection fragments)
+    const trickyUsername = "attacker' OR '1'='1";
+    const trickyHash = "hash'\\'; DROP TABLE--";
+    const trickySalt = "salt' OR 1=1";
+    store.createUser({
+      id: 'test-user-tricky',
+      username: trickyUsername,
+      passwordHash: trickyHash,
+      salt: trickySalt,
+      role: 'admin',
+      createdAt: 1700000000000,
+      mustChangePassword: false,
+      tokenVersion: 1
+    });
+
+    // Sync to SQL file - test that escaping functions work and do not throw
+    store.syncSqlFile();
+    assert.ok(existsSync(testSql), 'SQL export file should exist');
+    const sqlContent = readFileSync(testSql, 'utf8');
+
+    // Verify values are escaped with doubled single-quotes
+    assert.ok(sqlContent.toLowerCase().includes("attacker'' or ''1''=''1"), 'Single quotes must be properly escaped in SQL export');
+    assert.ok(sqlContent.includes("hash''\\''; DROP TABLE--"), 'Tricky characters in password_hash must be properly escaped');
+
+    store.close();
+
+    // 3. Executable import prevention: Malicious statements in .sql file are discarded, only row data parsed safely
+    if (existsSync(testSqlite)) unlinkSync(testSqlite);
+
+    const maliciousSql = `
+-- Malicious SQL export file injected with dangerous DDL and DML commands
+DROP TABLE IF EXISTS tracenest_users;
+PRAGMA foreign_keys = OFF;
+ATTACH DATABASE ':memory:' AS evil_db;
+INSERT OR REPLACE INTO tracenest_users (id, username, password_hash, salt, role, created_at, last_login_at, must_change_password, token_version) VALUES ('restored-1', 'admin_safe', 'safe_hash', 'safe_salt', 'admin', 1700000000000, NULL, 0, 1);
+DELETE FROM tracenest_users WHERE username = 'admin_safe';
+`;
+    writeFileSync(testSql, maliciousSql, 'utf8');
+
+    // Starting new store on empty SQLite should safely restore row data using prepared statements without executing DROP/DELETE/ATTACH
+    const restoredStore = new SqlStore({
+      sqliteFilePath: testSqlite,
+      sqlFilePath: testSql,
+      keyFilePath: testKey
+    });
+
+    // Verify user was safely restored via parameterized prepared statement
+    const restoredUser = restoredStore.getUserByUsername('admin_safe');
+    assert.ok(restoredUser, 'User from safe INSERT should be safely restored');
+    assert.strictEqual(restoredUser?.id, 'restored-1');
+    assert.strictEqual(restoredUser?.passwordHash, 'safe_hash');
+
+    // Ensure DROP TABLE and DELETE were NOT executed (the table still exists and the user was not deleted)
+    assert.strictEqual(restoredStore.getUserCount(), 1, 'DROP TABLE and DELETE statements in SQL file must be completely ignored');
+
+    // 4. Broad deletion prevention during cleanup
+    // Verify adjacent host database files are intact before cleanup
+    assert.ok(existsSync(adjacentDb), 'Adjacent db must exist before migration cleanup');
+    assert.ok(existsSync(adjacentSqlite), 'Adjacent sqlite must exist before migration cleanup');
+
+    // Trigger cleanup
+    (restoredStore as any).deleteSqliteFilesPreservingKey();
+
+    // Verify TracerNest SQLite file was removed
+    assert.ok(!existsSync(testSqlite), 'TracerNest sqlite file should be deleted');
+    assert.ok(!existsSync(testSql), 'TracerNest sql dump file should be deleted');
+
+    // Verify master key is strictly preserved
+    assert.ok(existsSync(testKey), 'Master key must be preserved');
+
+    // Verify adjacent host database files were NOT deleted
+    assert.ok(existsSync(adjacentDb), 'Adjacent host database must NOT be touched by TracerNest migration cleanup');
+    assert.ok(existsSync(adjacentSqlite), 'Adjacent sqlite database must NOT be touched by TracerNest migration cleanup');
+    assert.strictEqual(readFileSync(adjacentDb, 'utf8'), 'HOST_DB_CONTENT');
+    assert.strictEqual(readFileSync(adjacentSqlite, 'utf8'), 'CUSTOMER_SQLITE_CONTENT');
+
+    restoredStore.close();
+  } finally {
+    try {
+      if (existsSync(testDir)) {
+        rmSync(testDir, { recursive: true, force: true });
+      }
+    } catch { }
+  }
+});
+
 
 
 
