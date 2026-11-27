@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.2] - 2026-11-27
+
+### Added
+- **Dynamic Route Prefix Synchronization for Laravel 13:** `integrations/laravel/routes.php` and `TracerNestController` now automatically synchronize the routing prefix from `config('tracernest.endpoint')` when `TRACERNEST_ENDPOINT` is configured with a custom subpath (e.g., `http://localhost:8000/telemetry`), preventing 404 routing errors.
+- **SPA Runtime Base Path Injection (`window.__TRACERNEST_BASE_PATH__`):** `TracerNestController::dashboard()` injects the runtime base path directly into the dashboard HTML head, ensuring that the Single-Page Application (SPA) dashboard consistently issues AJAX requests (`/api/auth/status`, `/api/logs`, `/api/health`) to the correct prefix even when mounted under nested Laravel route groups (`Route::prefix('admin')->group(...)`).
+- **Trailing Slash & SPA Subroute Resilience:** Added support for both `Route::get('')` and `Route::get('/')` to resolve trailing-slash mismatches, along with direct route registrations for all SPA views (`/login`, `/setup`, `/decryption`, `/logs`, `/settings`, `/alerts`, `/audit`, `/users`).
+- **HTTP Ingest Route Prefix Harmonization:** In `TracerNestMiddleware` and `TracerNestMonologHandler`, HTTP mode automatically appends the configured routing prefix to host-only endpoints (e.g. `http://127.0.0.1:8001` -> `http://127.0.0.1:8001/tracernest/api/logs/ingest`) and avoids double-appending paths, eliminating ingestion 404s.
+- **Direct Microservice Ingest Fallback:** Added root route aliases (`POST /api/logs/ingest` and `POST /api/ingest`) in both Laravel (`config('tracernest.expose_root_api', true)`) and the standalone Node.js server (`src/middleware/handler.ts`), allowing external log forwarders to ingest telemetry seamlessly even if they omit the route prefix.
+- **Self-Telemetry Exclusion:** `TracerNestMiddleware` automatically excludes TracerNest's own internal dashboard and API endpoints (`$tracernestPrefix`) from telemetry capture, eliminating recursive logging loops and telemetry noise.
+- **Client IP & Real IP Diagnostic Display:** Extracted both Client IP (socket/proxy peer) and Real IP (`X-Real-IP`, `CF-Connecting-IP`, `True-Client-IP`) across HTTP requests, displaying both in the inspector dialog box for transparent proxy auditing.
+- **Accessibility Statement (`ACCESSIBILITY.md`):** Added a project accessibility standard documenting WCAG 2.1 Level AA conformance, dark-mode high-contrast palettes, keyboard accessibility, and barrier reporting.
+
+### Fixed
+- **Laravel 13 Endpoint 404s:** Fixed 404 Not Found errors occurring when endpoints were requested under custom prefixes or when trailing slashes were omitted.
+- **Markdown Flowchart npmjs Compatibility:** Converted Mermaid diagrams in `README.md` to universal ASCII/Unicode text flowcharts that render reliably across npmjs.com, GitHub, and terminal previews.
+- **XSS & CSP Hardening:** Hardened dashboard HTML generation with context-appropriate escaping for `appTitle`, `customLogo`, and dynamic log fields, alongside hardened CSP policies.
+
+---
+
 ## [1.8.6] - 2026-11-20
 
 ### Security & Capability Hardening
